@@ -19,7 +19,7 @@
 --==========================================================================
 -- 0. Constantes
 --==========================================================================
-local ENGINE_URL  = "https://raw.githubusercontent.com/PremiumAdm/Shxdrag/refs/heads/main/AdoptMeFarm_public.lua.txt"
+local ENGINE_URL  = "https://raw.githubusercontent.com/leandrocrynow/adopt/refs/heads/main/farmpublic.txt"
 local ENGINE_MARK = "AdoptMe Farm  v"            -- assinatura verificada no download
 local DIR         = "AdoptMeFarm"
 local ENGINE_FILE = DIR .. "/engine_fixado.lua"  -- copia local fixada
