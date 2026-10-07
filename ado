@@ -1,14 +1,42 @@
 --[[
-    Painel para o AdoptMe Farm  -  v2
+    Painel para o AdoptMe Farm  -  v3
     Motor: AdoptMe Farm v1.4 (codigo aberto e comentado)
 
-    Novidades desta versao:
-      - motor vindo do seu proprio repositorio
-      - animacoes em tudo: abertura, abas, interruptores, botoes, minimizar
-      - botao de minimizar que encolhe a janela ate a barra de titulo
-      - 7 abas e muito mais opcoes, incluindo a tabela de prioridades das tarefas
-      - arraste proprio, funciona com mouse e com toque
-      - iniciar automatico opcional
+    CORRECAO PRINCIPAL desta versao
+      A janela era ancorada pelo CENTRO. Ao voltar do minimizado ela crescia
+      para os dois lados, entao se a barra estivesse encostada no alto da tela
+      a janela subia e a barra de titulo ficava fora da tela: nao dava mais
+      para arrastar de volta. Agora a janela e ancorada pelo CANTO SUPERIOR
+      ESQUERDO, cresce so para baixo, e a posicao passa por um ajuste que
+      garante barra de titulo sempre visivel. Se a altura inteira nao couber
+      abaixo, a janela sobe apenas o necessario para caber. Tem tambem um
+      botao CENTRALIZAR A JANELA na aba Status como saida de emergencia.
+
+    MELHORIAS DE DESEMPENHO
+      1. Abas construidas uma vez e guardadas. Antes, cada troca de aba
+         destruia e recriava todos os controles da pagina, umas centenas de
+         objetos e de conexoes de evento. Agora e so esconder uma e mostrar
+         a outra, e cada aba lembra onde voce tinha parado a rolagem.
+      2. A conexao de movimento do ponteiro so existe enquanto algo esta
+         sendo arrastado. Antes eram duas conexoes rodando a cada movimento
+         do mouse, o tempo todo, mesmo com o painel parado.
+      3. Gravacao da configuracao agrupada. Antes cada clique em um
+         interruptor gerava um JSONEncode inteiro mais uma escrita em disco.
+         Agora uma rajada de cliques gera uma gravacao so.
+      4. Caminhos de configuracao divididos uma vez e guardados, sem
+         string.gmatch e sem casamento de padrao dentro de cada repintura.
+      5. Os dois lacos de fundo viraram um, e ele nao desenha nada enquanto
+         o painel esta fechado ou minimizado.
+      6. O slider so grava e redesenha quando o valor realmente muda, e um
+         clique simples ja leva o pino para onde voce clicou.
+      7. TweenInfo reaproveitado em vez de criado a cada animacao.
+
+    OUTRAS NOVIDADES
+      - a janela lembra onde voce deixou ela
+      - fechar e reabrir no meio da animacao nao esconde mais a janela sem
+        querer
+      - o painel se reajusta sozinho quando a tela muda de tamanho, ao girar
+        o celular por exemplo
 
     Abrir e fechar: tecla RightControl
 
@@ -30,6 +58,8 @@ local TOGGLE_KEY  = Enum.KeyCode.RightControl
 
 local LARG, ALT   = 740, 486
 local ALT_BARRA   = 46
+local MARGEM      = 8     -- folga minima entre a janela e a borda da tela
+local VISIVEL_MIN = 150   -- quanto da barra de titulo precisa ficar na tela
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -37,8 +67,11 @@ local Http    = game:GetService("HttpService")
 local Tween   = game:GetService("TweenService")
 local LP      = Players.LocalPlayer
 
+-- Resolvido uma vez. getgenv e uma chamada para fora do Lua e era refeita em
+-- toda verificacao de estado, uma vez por segundo.
+local ENV = (type(getgenv) == "function" and getgenv()) or _G
 local function env()
-    return (type(getgenv) == "function" and getgenv()) or _G
+    return ENV
 end
 
 local canWrite  = type(writefile) == "function"
@@ -138,7 +171,14 @@ end
 
 -- Preferencias do PAINEL. Nunca vao para o motor: ele recusa chaves que nao conhece.
 local function prefsPadrao()
-    return { AutoIniciar = false, AbrirMinimizado = false, Animacoes = true }
+    return {
+        AutoIniciar = false,
+        AbrirMinimizado = false,
+        Animacoes = true,
+        -- -1 quer dizer "ainda nao escolhida", entao o painel abre no centro
+        JanelaX = -1,
+        JanelaY = -1,
+    }
 end
 
 local Cfg  = defaults()
@@ -155,27 +195,53 @@ local function deepCopy(value)
     return copia
 end
 
+-- Caminhos como "Farm.Event.PetPen" sao divididos UMA vez e guardados. Antes
+-- cada leitura de cada controle refazia o string.gmatch.
+local pedacosDe = {}
+local function pedacos(caminho)
+    local lista = pedacosDe[caminho]
+    if not lista then
+        lista = {}
+        for parte in string.gmatch(caminho, "[^.]+") do
+            lista[#lista + 1] = parte
+        end
+        pedacosDe[caminho] = lista
+    end
+    return lista
+end
+
+-- Um caminho que comeca com __pref__ aponta para as preferencias do painel,
+-- que nunca vao para o motor: ele recusa chaves que nao conhece. A decisao e
+-- uma comparacao de tabela, sem casamento de padrao.
+local function raizDe(lista)
+    if lista[1] == "__pref__" then
+        return Pref, 2
+    end
+    return Cfg, 1
+end
+
 local function getPath(caminho)
-    local node = Cfg
-    for parte in string.gmatch(caminho, "[^.]+") do
+    local lista = pedacos(caminho)
+    local node, inicio = raizDe(lista)
+    for indice = inicio, #lista do
         if type(node) ~= "table" then
             return nil
         end
-        node = node[parte]
+        node = node[lista[indice]]
     end
     return node
 end
 
 local function setPath(caminho, valor)
-    local partes = {}
-    for parte in string.gmatch(caminho, "[^.]+") do
-        table.insert(partes, parte)
+    local lista = pedacos(caminho)
+    local node, inicio = raizDe(lista)
+    for indice = inicio, #lista - 1 do
+        node = node[lista[indice]]
+        if type(node) ~= "table" then
+            return
+        end
     end
-    local node = Cfg
-    for indice = 1, #partes - 1 do
-        node = node[partes[indice]]
-    end
-    node[partes[#partes]] = valor
+    node[lista[#lista]] = valor
 end
 
 --==========================================================================
@@ -303,6 +369,8 @@ local function startFarm()
         setStatus("erro de compilacao: " .. tostring(erroCompilacao))
         return
     end
+    gravacaoPendente = false
+    saveConfig()   -- antes de iniciar vale gravar na hora
     env().AdoptMeFarmSettings   = deepCopy(Cfg)
     env().AdoptMeFarmLoaderInfo = { Url = ENGINE_URL }
     local ok, erroExecucao = pcall(chunk)
@@ -326,8 +394,24 @@ end
 -- O motor le a configuracao uma vez no inicio, entao mudar com ele rodando
 -- so vale depois de reiniciar.
 local precisaReiniciar = false
+
+-- Gravar a cada clique custa um JSONEncode da configuracao inteira mais uma
+-- escrita em disco. Aqui o pedido e agrupado: uma rajada de cliques gera UMA
+-- gravacao, um segundo depois do ultimo.
+local gravacaoPendente = false
+local function agendarGravacao()
+    if gravacaoPendente then
+        return
+    end
+    gravacaoPendente = true
+    task.delay(1, function()
+        gravacaoPendente = false
+        saveConfig()
+    end)
+end
+
 local function marcarSujo()
-    saveConfig()
+    agendarGravacao()
     if isRunning() then
         precisaReiniciar = true
     end
@@ -357,18 +441,31 @@ local COR = {
     destaque  = Color3.fromRGB(98, 136, 238),
 }
 
+-- TweenInfo e imutavel, entao guardar e reusar e seguro. O painel usa um
+-- punhado de combinacoes de tempo e estilo, e antes criava um objeto novo em
+-- toda animacao, inclusive durante o arraste dos sliders.
+local infosTween = {}
+local function infoTween(tempo, estilo, direcao)
+    local chave = tostring(tempo) .. "|" .. tostring(estilo) .. "|" .. tostring(direcao)
+    local info = infosTween[chave]
+    if not info then
+        info = TweenInfo.new(tempo, estilo, direcao)
+        infosTween[chave] = info
+    end
+    return info
+end
+
 local function animar(objeto, tempo, props, estilo, direcao)
     if not Pref.Animacoes then
-        for chave, valor in pairs(props) do
-            pcall(function()
+        pcall(function()
+            for chave, valor in pairs(props) do
                 objeto[chave] = valor
-            end)
-        end
+            end
+        end)
         return nil
     end
-    local info = TweenInfo.new(tempo or 0.18, estilo or Enum.EasingStyle.Quad,
-        direcao or Enum.EasingDirection.Out)
-    local t = Tween:Create(objeto, info, props)
+    local t = Tween:Create(objeto, infoTween(tempo or 0.18,
+        estilo or Enum.EasingStyle.Quad, direcao or Enum.EasingDirection.Out), props)
     t:Play()
     return t
 end
@@ -419,9 +516,12 @@ local tela = novo("ScreenGui", {
     DisplayOrder = 9999,
 }, telaPai)
 
+-- Ancora no CANTO SUPERIOR ESQUERDO, nao no centro. Com a ancora no centro,
+-- crescer de 46 para 486 de altura empurrava 220 pixels para CIMA, e era isso
+-- que jogava a barra de titulo para fora da tela ao voltar do minimizado.
 local janela = novo("Frame", {
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.fromScale(0.5, 0.5),
+    AnchorPoint = Vector2.new(0, 0),
+    Position = UDim2.fromOffset(0, 0),
     Size = UDim2.fromOffset(LARG, ALT),
     BackgroundColor3 = COR.fundo,
     BorderSizePixel = 0,
@@ -505,23 +605,38 @@ local colunaAbas = novo("Frame", {
 }, corpo)
 novo("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder }, colunaAbas)
 
-local POS_CONTEUDO = UDim2.fromOffset(176, 10)
-local areaConteudo = novo("ScrollingFrame", {
+-- Cada aba ganha a sua propria area de rolagem, criada na primeira vez que
+-- voce abre a aba e guardada depois. Trocar de aba virou esconder uma e
+-- mostrar a outra, em vez de destruir e refazer umas centenas de objetos e
+-- de conexoes de evento. De brinde, cada aba lembra a sua rolagem.
+local caixaConteudo = novo("Frame", {
     Size = UDim2.new(1, -188, 1, -62),
-    Position = POS_CONTEUDO,
+    Position = UDim2.fromOffset(176, 10),
     BackgroundColor3 = COR.painel,
     BorderSizePixel = 0,
-    ScrollBarThickness = 4,
-    ScrollBarImageColor3 = COR.linha,
-    CanvasSize = UDim2.new(),
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ClipsDescendants = true,
 }, corpo)
-canto(areaConteudo, 8)
-novo("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, areaConteudo)
-novo("UIPadding", {
-    PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 10),
-    PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
-}, areaConteudo)
+canto(caixaConteudo, 8)
+
+local function criarAreaPagina()
+    local area = novo("ScrollingFrame", {
+        Size = UDim2.fromScale(1, 1),
+        Position = UDim2.new(),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = COR.linha,
+        CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = false,
+    }, caixaConteudo)
+    novo("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, area)
+    novo("UIPadding", {
+        PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
+    }, area)
+    return area
+end
 
 ------------------------------------------------------------------- rodape
 local rodape = novo("Frame", {
@@ -561,45 +676,154 @@ function setStatus(texto)
     animar(rotuloStatus, 0.25, { TextTransparency = 0 })
 end
 
---==========================================================================
--- 5. Arraste proprio (mouse e toque)
---==========================================================================
-do
-    local arrastando, inicioEntrada, inicioPos
-    local function ehArraste(entrada)
-        return entrada.UserInputType == Enum.UserInputType.MouseButton1
-            or entrada.UserInputType == Enum.UserInputType.Touch
-    end
-    barra.InputBegan:Connect(function(entrada)
-        if ehArraste(entrada) then
-            arrastando = true
-            inicioEntrada = entrada.Position
-            inicioPos = janela.Position
-        end
-    end)
-    UIS.InputChanged:Connect(function(entrada)
-        if arrastando and (entrada.UserInputType == Enum.UserInputType.MouseMovement
-            or entrada.UserInputType == Enum.UserInputType.Touch) then
-            local delta = entrada.Position - inicioEntrada
-            janela.Position = UDim2.new(inicioPos.X.Scale, inicioPos.X.Offset + delta.X,
-                inicioPos.Y.Scale, inicioPos.Y.Offset + delta.Y)
-        end
-    end)
-    UIS.InputEnded:Connect(function(entrada)
-        if ehArraste(entrada) then
-            arrastando = false
-        end
-    end)
-end
+-- Declaradas aqui, e nao junto das paginas, porque o botao de minimizar e as
+-- predefinicoes aparecem antes no arquivo e precisam chamar estas funcoes. Sem
+-- isto os fechamentos as resolveriam como variavel global, ou seja, nil.
+local abrirAba, abaAtiva, repintarTudo
 
 --==========================================================================
--- 6. Minimizar
+-- 5. Geometria da janela: onde ela pode ficar
 --==========================================================================
 local minimizado = false
+local posJanela = Vector2.new(0, 0)   -- canto superior esquerdo, em pixels
 
+local function alturaAlvo()
+    return minimizado and ALT_BARRA or ALT
+end
+
+local function tamanhoTela()
+    local tamanho = tela.AbsoluteSize
+    if tamanho.X < 10 or tamanho.Y < 10 then
+        return Vector2.new(1280, 720)
+    end
+    return tamanho
+end
+
+-- Durante o arraste a unica regra e: a barra de titulo nao sai da tela.
+-- Voce pode deixar a janela passando da borda de baixo se quiser.
+local function ajustarArrasto(x, y)
+    local tamanho = tamanhoTela()
+    local maiorY = tamanho.Y - ALT_BARRA - MARGEM
+    if maiorY < MARGEM then
+        maiorY = MARGEM
+    end
+    return math.clamp(x, VISIVEL_MIN - LARG, tamanho.X - VISIVEL_MIN),
+        math.clamp(y, MARGEM, maiorY)
+end
+
+-- Ao crescer, se a altura inteira nao couber abaixo, a janela sobe APENAS o
+-- necessario para caber, nunca mais que isso. E o que conserta o painel que
+-- subia e ficava inalcancavel ao voltar do minimizado.
+local function encaixar(altura)
+    local tamanho = tamanhoTela()
+    local x, y = ajustarArrasto(posJanela.X, posJanela.Y)
+    if y + altura > tamanho.Y - MARGEM then
+        y = math.max(MARGEM, tamanho.Y - MARGEM - altura)
+    end
+    return x, y
+end
+
+local function colocar(x, y)
+    posJanela = Vector2.new(x, y)
+    janela.Position = UDim2.fromOffset(x, y)
+end
+
+local function posicaoInicial()
+    local tamanho = tamanhoTela()
+    if type(Pref.JanelaX) == "number" and Pref.JanelaX >= 0
+        and type(Pref.JanelaY) == "number" and Pref.JanelaY >= 0 then
+        return ajustarArrasto(Pref.JanelaX, Pref.JanelaY)
+    end
+    return math.floor((tamanho.X - LARG) / 2), math.floor((tamanho.Y - ALT) / 2)
+end
+
+-- Um tween de janela por vez. Dois ao mesmo tempo brigavam pela posicao.
+local tweenJanela = nil
+local function animarJanela(tempo, props, estilo)
+    if tweenJanela then
+        pcall(function()
+            tweenJanela:Cancel()
+        end)
+        tweenJanela = nil
+    end
+    tweenJanela = animar(janela, tempo, props, estilo)
+    return tweenJanela
+end
+
+-- a tela mudou de tamanho, girou o celular por exemplo
+tela:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+    local x, y = encaixar(alturaAlvo())
+    colocar(x, y)
+end)
+
+--==========================================================================
+-- 6. Arraste: UMA conexao de movimento, e so enquanto algo esta arrastando
+--==========================================================================
+local arrastoMover = nil
+local arrastoFim   = nil
+local conexaoMover = nil
+
+local function pararArrasto()
+    if conexaoMover then
+        conexaoMover:Disconnect()
+        conexaoMover = nil
+    end
+    local fim = arrastoFim
+    arrastoMover, arrastoFim = nil, nil
+    if fim then
+        fim()
+    end
+end
+
+local function comecarArrasto(mover, fim)
+    arrastoMover, arrastoFim = mover, fim
+    if not conexaoMover then
+        conexaoMover = UIS.InputChanged:Connect(function(entrada)
+            if arrastoMover and (entrada.UserInputType == Enum.UserInputType.MouseMovement
+                or entrada.UserInputType == Enum.UserInputType.Touch) then
+                arrastoMover(entrada.Position)
+            end
+        end)
+    end
+end
+
+UIS.InputEnded:Connect(function(entrada)
+    if arrastoMover and (entrada.UserInputType == Enum.UserInputType.MouseButton1
+        or entrada.UserInputType == Enum.UserInputType.Touch) then
+        pararArrasto()
+    end
+end)
+
+barra.InputBegan:Connect(function(entrada)
+    if entrada.UserInputType == Enum.UserInputType.MouseButton1
+        or entrada.UserInputType == Enum.UserInputType.Touch then
+        if tweenJanela then
+            pcall(function()
+                tweenJanela:Cancel()
+            end)
+            tweenJanela = nil
+        end
+        local inicio = entrada.Position
+        local baseX, baseY = posJanela.X, posJanela.Y
+        comecarArrasto(function(ponteiro)
+            local delta = ponteiro - inicio
+            local x, y = ajustarArrasto(baseX + delta.X, baseY + delta.Y)
+            colocar(x, y)
+        end, function()
+            Pref.JanelaX, Pref.JanelaY = posJanela.X, posJanela.Y
+            agendarGravacao()
+        end)
+    end
+end)
+
+--==========================================================================
+-- 7. Minimizar
+--==========================================================================
 local function aplicarMinimizar(animado)
-    local alvoAltura = minimizado and ALT_BARRA or ALT
+    local altura = alturaAlvo()
     btnMinimizar.Text = minimizado and "+" or "-"
+    local x, y = encaixar(altura)
+
     if minimizado then
         if animado then
             animar(corpo, 0.10, { Position = UDim2.fromOffset(0, ALT_BARRA + 14) })
@@ -618,22 +842,34 @@ local function aplicarMinimizar(animado)
             corpo.Position = UDim2.fromOffset(0, ALT_BARRA)
         end
     end
-    -- sem animacao a altura fica para quem chamou, para nao brigar com o
-    -- tween de abertura da janela
+
+    -- Altura e posicao no MESMO tween: assim a janela nunca aparece crescida
+    -- fora da tela para so depois ser recolocada.
     if animado then
-        animar(janela, 0.22, { Size = UDim2.fromOffset(LARG, alvoAltura) }, Enum.EasingStyle.Quint)
+        posJanela = Vector2.new(x, y)
+        animarJanela(0.22, {
+            Size = UDim2.fromOffset(LARG, altura),
+            Position = UDim2.fromOffset(x, y),
+        }, Enum.EasingStyle.Quint)
+    else
+        janela.Size = UDim2.fromOffset(LARG, altura)
+        colocar(x, y)
     end
 end
 
 btnMinimizar.MouseButton1Click:Connect(function()
     minimizado = not minimizado
     Pref.AbrirMinimizado = minimizado
-    saveConfig()
+    agendarGravacao()
     aplicarMinimizar(true)
+    -- a chave "Abrir ja minimizado" mostra este mesmo valor
+    if repintarTudo then
+        repintarTudo()
+    end
 end)
 
 --==========================================================================
--- 7. Controles
+-- 8. Controles
 --==========================================================================
 local ordem = 0
 local function proximaOrdem()
@@ -641,12 +877,22 @@ local function proximaOrdem()
     return ordem
 end
 
+-- Validos somente enquanto uma pagina esta sendo construida: para onde vao os
+-- controles e onde cada um deixa a sua funcao de repintura.
+local areaAtual, listaAtual = nil, nil
+
+local function registrar(funcao)
+    if listaAtual and funcao then
+        listaAtual[#listaAtual + 1] = funcao
+    end
+end
+
 local function linhaBase(altura)
     return novo("Frame", {
         Size = UDim2.new(1, 0, 0, altura),
         BackgroundTransparency = 1,
         LayoutOrder = proximaOrdem(),
-    }, areaConteudo)
+    }, areaAtual)
 end
 
 local function tituloSecao(texto)
@@ -747,26 +993,11 @@ local function criarToggle(item)
     end)
 
     pintar(false)
-    return frame, function()
-        pintar(false)
-    end
+    registrar(function(animado)
+        pintar(animado == true)
+    end)
+    return frame
 end
-
--- Arraste dos sliders: UMA conexao para todos, nunca por slider criado.
-local sliderAtivo = nil
-UIS.InputEnded:Connect(function(entrada)
-    if sliderAtivo and (entrada.UserInputType == Enum.UserInputType.MouseButton1
-        or entrada.UserInputType == Enum.UserInputType.Touch) then
-        sliderAtivo = nil
-        marcarSujo()
-    end
-end)
-UIS.InputChanged:Connect(function(entrada)
-    if sliderAtivo and (entrada.UserInputType == Enum.UserInputType.MouseMovement
-        or entrada.UserInputType == Enum.UserInputType.Touch) then
-        sliderAtivo(entrada.Position.X)
-    end
-end)
 
 local function criarSlider(item)
     local frame = linhaBase(52)
@@ -823,28 +1054,41 @@ local function criarSlider(item)
         end
     end
 
-    local function aplicarDoMouse(posX)
+    local function aplicarDoPonteiro(posX)
         local fracao = math.clamp((posX - trilho.AbsolutePosition.X)
             / math.max(1, trilho.AbsoluteSize.X), 0, 1)
         local bruto = item.min + fracao * (item.max - item.min)
         local valor = math.floor(bruto / passo + 0.5) * passo
         valor = tonumber(string.format("%.2f", valor)) or item.min
-        setPath(item.path, valor)
-        pintar(false)
+        -- o mouse se move varias vezes por segundo e quase sempre dentro do
+        -- mesmo passo: sem valor novo, nada a gravar nem a redesenhar
+        if valor ~= getPath(item.path) then
+            setPath(item.path, valor)
+            pintar(false)
+        end
     end
 
-    trilho.MouseButton1Down:Connect(function()
-        sliderAtivo = aplicarDoMouse
-        animar(pino, 0.1, { Size = UDim2.fromOffset(18, 18) })
-    end)
-    trilho.MouseButton1Up:Connect(function()
-        animar(pino, 0.1, { Size = UDim2.fromOffset(14, 14) })
+    -- Um clique simples ja leva o pino para onde voce clicou, e o arraste
+    -- continua dali.
+    trilho.InputBegan:Connect(function(entrada)
+        if entrada.UserInputType == Enum.UserInputType.MouseButton1
+            or entrada.UserInputType == Enum.UserInputType.Touch then
+            animar(pino, 0.1, { Size = UDim2.fromOffset(18, 18) })
+            aplicarDoPonteiro(entrada.Position.X)
+            comecarArrasto(function(ponteiro)
+                aplicarDoPonteiro(ponteiro.X)
+            end, function()
+                animar(pino, 0.1, { Size = UDim2.fromOffset(14, 14) })
+                marcarSujo()
+            end)
+        end
     end)
 
     pintar(false)
-    return frame, function()
-        pintar(true)
-    end
+    registrar(function(animado)
+        pintar(animado == true)
+    end)
+    return frame
 end
 
 local function criarCiclo(item)
@@ -895,7 +1139,8 @@ local function criarCiclo(item)
     end)
 
     pintar()
-    return frame, pintar
+    registrar(pintar)
+    return frame
 end
 
 local function criarCampo(item)
@@ -937,14 +1182,18 @@ local function criarCampo(item)
         marcarSujo()
     end)
 
-    return frame, function()
-        caixa.Text = tostring(getPath(item.path) or "")
-    end
+    registrar(function()
+        -- nao atropela o que voce esta digitando
+        if not caixa:IsFocused() then
+            caixa.Text = tostring(getPath(item.path) or "")
+        end
+    end)
+    return frame
 end
 
 -- toggle de preferencia do painel (nao vai para o motor)
 local function criarPref(chave, label, desc)
-    local frame = criarToggle({ path = "__pref__" .. chave, label = label, desc = desc })
+    local frame = criarToggle({ path = "__pref__." .. chave, label = label, desc = desc })
     return frame
 end
 
@@ -990,28 +1239,6 @@ local function criarTexto(texto, cor, altura)
 end
 
 --==========================================================================
--- 8. Suporte a preferencias dentro de getPath/setPath
---==========================================================================
-do
-    local getOriginal, setOriginal = getPath, setPath
-    getPath = function(caminho)
-        local chave = string.match(caminho, "^__pref__(.+)$")
-        if chave then
-            return Pref[chave]
-        end
-        return getOriginal(caminho)
-    end
-    setPath = function(caminho, valor)
-        local chave = string.match(caminho, "^__pref__(.+)$")
-        if chave then
-            Pref[chave] = valor
-            return
-        end
-        return setOriginal(caminho, valor)
-    end
-end
-
---==========================================================================
 -- 9. Paginas
 --==========================================================================
 local TAREFAS = {
@@ -1029,8 +1256,6 @@ local LENTAS = {
 }
 
 local paginas = {}
-local repintar = {}
-local abrirAba, abaAtiva
 
 local function aba(nome, construir)
     table.insert(paginas, { nome = nome, construir = construir })
@@ -1086,7 +1311,7 @@ aba("Tarefas", function()
             Cfg.Farm.Tasks[tarefa[1]] = true
         end
         marcarSujo()
-        abrirAba(abaAtiva)
+        repintarTudo()
         setStatus("todas as tarefas ligadas")
     end)
     criarBotao("SO AS RAPIDAS", COR.linha, function()
@@ -1094,7 +1319,7 @@ aba("Tarefas", function()
             Cfg.Farm.Tasks[tarefa[1]] = not LENTAS[tarefa[1]]
         end
         marcarSujo()
-        abrirAba(abaAtiva)
+        repintarTudo()
         setStatus("so as tarefas rapidas")
     end)
 
@@ -1120,7 +1345,7 @@ aba("Prioridades", function()
     criarBotao("RESTAURAR PRIORIDADES PADRAO", COR.linha, function()
         Cfg.Farm.Priority = defaults().Farm.Priority
         marcarSujo()
-        abrirAba(abaAtiva)
+        repintarTudo()
         setStatus("prioridades restauradas")
     end)
     tituloSecao("ordem das tarefas")
@@ -1251,7 +1476,7 @@ aba("Status", function()
     local _, rotulo = criarTexto("", COR.texto, 170)
     rotulo.TextSize = 12
 
-    table.insert(repintar, function()
+    registrar(function()
         local api = farmApi()
         if not api or type(api.State) ~= "table" then
             rotulo.Text = "Farm parado.\n\nUse INICIAR no rodape."
@@ -1299,7 +1524,7 @@ aba("Status", function()
         end
         ligar(Cfg.Farm)
         marcarSujo()
-        abrirAba(abaAtiva)
+        repintarTudo()
         setStatus("tudo ligado, telemetria segue desligada")
     end)
     criarBotao("SO O BASICO", COR.linha, function()
@@ -1317,7 +1542,7 @@ aba("Status", function()
         end
         Cfg = novoCfg
         marcarSujo()
-        abrirAba(abaAtiva)
+        repintarTudo()
         setStatus("predefinicao basica aplicada")
     end)
     criarBotao("DESLIGAR TUDO", COR.linha, function()
@@ -1332,7 +1557,7 @@ aba("Status", function()
         end
         desligar(Cfg.Farm)
         marcarSujo()
-        abrirAba(abaAtiva)
+        repintarTudo()
         setStatus("tudo desligado")
     end)
 
@@ -1367,8 +1592,21 @@ aba("Status", function()
     criarBotao("RESTAURAR PADROES DO PAINEL", COR.perigo, function()
         Cfg = defaults()
         marcarSujo()
-        abrirAba(abaAtiva)
+        repintarTudo()
         setStatus("padroes restaurados")
+    end)
+
+    tituloSecao("janela")
+    criarBotao("CENTRALIZAR A JANELA", COR.linha, function()
+        local tamanho = tamanhoTela()
+        local altura = alturaAlvo()
+        local x, y = ajustarArrasto(math.floor((tamanho.X - LARG) / 2),
+            math.floor((tamanho.Y - altura) / 2))
+        posJanela = Vector2.new(x, y)
+        animarJanela(0.2, { Position = UDim2.fromOffset(x, y) }, Enum.EasingStyle.Quint)
+        Pref.JanelaX, Pref.JanelaY = x, y
+        agendarGravacao()
+        setStatus("janela centralizada")
     end)
 
     tituloSecao("origem")
@@ -1381,6 +1619,9 @@ end)
 local botoesAba = {}
 
 function abrirAba(indice)
+    if abaAtiva == indice then
+        return
+    end
     abaAtiva = indice
     for posicao, botao in ipairs(botoesAba) do
         local ativo = posicao == indice
@@ -1389,18 +1630,40 @@ function abrirAba(indice)
             TextColor3 = ativo and Color3.new(1, 1, 1) or COR.fraco,
         })
     end
-    for _, filho in ipairs(areaConteudo:GetChildren()) do
-        if not filho:IsA("UIListLayout") and not filho:IsA("UIPadding") then
-            filho:Destroy()
+
+    local pagina = paginas[indice]
+    if not pagina.area then
+        pagina.area = criarAreaPagina()
+        pagina.atualizar = {}
+        areaAtual, listaAtual = pagina.area, pagina.atualizar
+        ordem = 0
+        pagina.construir()
+        areaAtual, listaAtual = nil, nil
+    end
+    for _, outra in ipairs(paginas) do
+        if outra.area and outra ~= pagina then
+            outra.area.Visible = false
         end
     end
-    ordem = 0
-    table.clear(repintar)
-    paginas[indice].construir()
-    areaConteudo.CanvasPosition = Vector2.new()
+    pagina.area.Visible = true
     -- entrada deslizando
-    areaConteudo.Position = POS_CONTEUDO + UDim2.fromOffset(16, 0)
-    animar(areaConteudo, 0.18, { Position = POS_CONTEUDO }, Enum.EasingStyle.Quint)
+    pagina.area.Position = UDim2.fromOffset(18, 0)
+    animar(pagina.area, 0.18, { Position = UDim2.new() }, Enum.EasingStyle.Quint)
+end
+
+-- Repinta os controles de todas as abas JA construidas. Usado depois das
+-- predefinicoes, que mexem na configuracao por tras dos controles. So a aba
+-- visivel ganha animacao.
+function repintarTudo()
+    for _, pagina in ipairs(paginas) do
+        local lista = pagina.atualizar
+        if lista then
+            local animado = pagina.area ~= nil and pagina.area.Visible
+            for _, funcao in ipairs(lista) do
+                pcall(funcao, animado)
+            end
+        end
+    end
 end
 
 for indice, pagina in ipairs(paginas) do
@@ -1441,17 +1704,32 @@ local visivel = true
 
 local function mostrarJanela(mostrar)
     visivel = mostrar
+    local altura = alturaAlvo()
     if mostrar then
+        local x, y = encaixar(altura)
+        posJanela = Vector2.new(x, y)
         janela.Visible = true
-        janela.Size = UDim2.fromOffset(LARG - 60, (minimizado and ALT_BARRA or ALT) - 40)
-        animar(janela, 0.24, {
-            Size = UDim2.fromOffset(LARG, minimizado and ALT_BARRA or ALT),
+        -- nasce menor e deslocada para dentro, para crescer no proprio lugar
+        local recuo = math.min(20, math.floor((altura - ALT_BARRA) / 2))
+        janela.Size = UDim2.fromOffset(LARG - 60, math.max(ALT_BARRA, altura - 40))
+        janela.Position = UDim2.fromOffset(x + 30, y + recuo)
+        animarJanela(0.24, {
+            Size = UDim2.fromOffset(LARG, altura),
+            Position = UDim2.fromOffset(x, y),
         }, Enum.EasingStyle.Quint)
     else
-        local t = animar(janela, 0.16, { Size = UDim2.fromOffset(LARG - 60, 0) })
+        local t = animarJanela(0.16, {
+            Size = UDim2.fromOffset(LARG - 60, math.max(0, altura - 40)),
+            Position = UDim2.fromOffset(posJanela.X + 30, posJanela.Y + 20),
+        })
         if t then
-            t.Completed:Connect(function()
-                janela.Visible = false
+            -- Completed tambem dispara quando o tween e CANCELADO. Sem olhar o
+            -- estado, reabrir no meio da animacao escondia a janela de novo.
+            t.Completed:Connect(function(estado)
+                if estado == Enum.PlaybackState.Completed then
+                    janela.Visible = false
+                    janela.Position = UDim2.fromOffset(posJanela.X, posJanela.Y)
+                end
             end)
         else
             janela.Visible = false
@@ -1464,7 +1742,8 @@ btnFechar.MouseButton1Click:Connect(function()
 end)
 
 UIS.InputBegan:Connect(function(entrada, capturado)
-    if not capturado and entrada.KeyCode == TOGGLE_KEY then
+    if not capturado and entrada.KeyCode == TOGGLE_KEY
+        and not UIS:GetFocusedTextBox() then
         mostrarJanela(not visivel)
     end
 end)
@@ -1486,45 +1765,58 @@ btnPrincipal.MouseButton1Click:Connect(function()
     end
 end)
 
--- rodape, ponto de estado e aba Status
+-- UM laco para o rodape, o ponto de estado e a aba Status. Antes eram dois, e
+-- os dois rodavam mesmo com o painel fechado. Agora, painel fechado, nao
+-- desenha nada; minimizado, cuida so da barra de titulo.
 task.spawn(function()
     local ultimoTexto = nil
+    local pontoGrande = false
+    local passo = 0
     while tela.Parent do
-        local rodando = isRunning()
-        local texto, cor
-        if precisaReiniciar then
-            texto, cor = "APLICAR E REINICIAR", COR.aviso
-        elseif rodando then
-            texto, cor = "PARAR", COR.perigo
-        else
-            texto, cor = "INICIAR", COR.ligado
-        end
-        if texto ~= ultimoTexto then
-            ultimoTexto = texto
-            btnPrincipal.Text = texto
-            animar(btnPrincipal, 0.2, { BackgroundColor3 = cor })
-            animar(pontoEstado, 0.2, { BackgroundColor3 = rodando and COR.ligado or COR.desligado })
-        end
-        if abaAtiva == #paginas then
-            for _, funcao in ipairs(repintar) do
-                pcall(funcao)
+        if visivel then
+            local rodando = isRunning()
+            local texto, cor
+            if precisaReiniciar then
+                texto, cor = "APLICAR E REINICIAR", COR.aviso
+            elseif rodando then
+                texto, cor = "PARAR", COR.perigo
+            else
+                texto, cor = "INICIAR", COR.ligado
+            end
+            if texto ~= ultimoTexto then
+                ultimoTexto = texto
+                btnPrincipal.Text = texto
+                animar(btnPrincipal, 0.2, { BackgroundColor3 = cor })
+                animar(pontoEstado, 0.2,
+                    { BackgroundColor3 = rodando and COR.ligado or COR.desligado })
+            end
+
+            -- pulso do ponto, visivel tambem com o painel minimizado
+            if rodando and Pref.Animacoes then
+                pontoGrande = not pontoGrande
+                if pontoGrande then
+                    animar(pontoEstado, 0.55, { Size = UDim2.fromOffset(12, 12),
+                        Position = UDim2.new(1, -94, 0, 17) })
+                else
+                    animar(pontoEstado, 0.55, { Size = UDim2.fromOffset(8, 8),
+                        Position = UDim2.new(1, -92, 0, 19) })
+                end
+            end
+
+            passo = passo + 1
+            if passo >= 2 then
+                passo = 0
+                if not minimizado and abaAtiva == #paginas then
+                    local lista = paginas[#paginas].atualizar
+                    if lista then
+                        for _, funcao in ipairs(lista) do
+                            pcall(funcao)
+                        end
+                    end
+                end
             end
         end
-        task.wait(1)
-    end
-end)
-
--- pulsar o ponto enquanto o farm roda
-task.spawn(function()
-    while tela.Parent do
-        if isRunning() and Pref.Animacoes then
-            animar(pontoEstado, 0.6, { Size = UDim2.fromOffset(12, 12), Position = UDim2.new(1, -94, 0, 17) })
-            task.wait(0.6)
-            animar(pontoEstado, 0.6, { Size = UDim2.fromOffset(8, 8), Position = UDim2.new(1, -92, 0, 19) })
-            task.wait(0.6)
-        else
-            task.wait(1)
-        end
+        task.wait(0.6)
     end
 end)
 
@@ -1533,12 +1825,13 @@ end)
 --==========================================================================
 loadConfig()
 minimizado = Pref.AbrirMinimizado == true
+do
+    local x, y = posicaoInicial()
+    colocar(x, y)
+end
 abrirAba(1)
 aplicarMinimizar(false)
-janela.Size = UDim2.fromOffset(LARG - 60, (minimizado and ALT_BARRA or ALT) - 40)
-animar(janela, 0.3, {
-    Size = UDim2.fromOffset(LARG, minimizado and ALT_BARRA or ALT),
-}, Enum.EasingStyle.Quint)
+mostrarJanela(true)
 
 setStatus(canWrite and ("pronto. configuracao em " .. CFG_FILE)
     or "pronto. seu executor nao grava arquivos: a configuracao nao sera salva.")
