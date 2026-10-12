@@ -1,41 +1,32 @@
 --[[
-    Painel para o AdoptMe Farm  -  v4
+    Painel para o AdoptMe Farm  -  v5
     Motor: AdoptMe Farm v2.1.2 (Shxdrag Hub Edition)
 
-    O QUE MUDOU PARA O MOTOR 2.1
-      - O motor 2.1 so faz necessidades com Farm.AutoNeeds.Enabled ligado. Sem
-        essa chave, o painel v3 rodaria e o farm nao faria nada. Agora ela
-        existe e vem ligada.
-      - Mudancas valem NA HORA, sem reiniciar: o motor 2.1 expoe a propria
-        configuracao (AdoptMeFarm.Config) e le dela a cada passo. Só o
-        intervalo do laco e as opcoes do arquivo de log ainda pedem reinicio.
-      - Opcoes novas: neon e mega neon, pocoes por tipo, ordem dos pets,
-        tipos favoritos, necessidades rapidas enquanto espera, prioridade
-        inteligente, recuperacao quando trava, reentrar no servidor, o que a
-        chave da Cripta abre, ninho automatico, loja de doces, protecao da
-        camera, entrar no Ghost Gallery pelo circulo, mencoes e resumo.
-      - Aba Status com o estado do proprio motor (doces, Ghost Gallery, Pet Pen,
-        tarefas em pausa) e acoes rapidas: ir pra casa, pular tarefa, coletar o
-        Pet Pen, tentar de novo o que esta em pausa, testar o webhook.
+    TODAS AS OPCOES DO MOTOR ESTAO AQUI
+      Cada chave do Config.Defaults do motor tem um controle, e tambem as que o
+      motor so le sem declarar (Focus, Auto Skelicorn, o jeito de andar no
+      Hauntlet, esquadrao). As que estao incompletas no 2.1.2 aparecem em
+      LARANJA, com o motivo, e comecam desligadas. Ligar e decisao sua.
+
+      - Mudancas valem NA HORA com o farm rodando: o motor 2.1 le a propria
+        configuracao a cada passo. Pedem reinicio so: intervalo do laco, nome,
+        arquivo de log, telemetria e a janela do proprio motor.
+      - As opcoes que o motor nao declara (Farm.Focus, Event.AutoSkelicorn,
+        Event.Hauntlet*) nao vao na partida, para ele nao reclamar de chave
+        desconhecida: entram na configuracao viva logo depois que ele sobe.
+      - Predefinicoes do proprio motor e a janela dele podem ser acionadas
+        pela aba Status.
 
     REMENDO NO MOTOR 2.1.2
-      O motor colado chama GameConstants.focusKind e GameConstants.focusOf, mas
-      nao define nenhuma das duas. Com pocoes ou neon ligados, o laco de tarefas
-      quebrava a cada passo e era desligado pelo proprio motor em 2,5 s; a Cripta
-      e o Pet Pen falhavam em toda tentativa. O painel acrescenta as duas funcoes
-      ao texto do motor, em memoria, antes de rodar. Se o motor um dia trouxer as
-      suas, o remendo nao e aplicado.
-
-    FICAM DESLIGADOS DE PROPOSITO
-      - A janela propria do motor (Interface.Enabled): baixaria uma biblioteca de
-        interface do GitHub e, nesta versao, nem abre.
-      - Hauntlet: faltam no motor as funcoes de movimento dentro da corrida.
+      O motor chama GameConstants.focusKind e focusOf sem definir nenhuma das
+      duas: com pocoes ou neon ligados, o laco de tarefas quebrava e era
+      desligado pelo motor em 2,5 s. O painel acrescenta as duas funcoes ao
+      motor, em memoria, antes de rodar.
 
     SEGURANCA
-      O motor e baixado UMA vez, verificado e gravado localmente; depois o painel
-      usa a copia local. Nenhum motor roda se for anterior ao v2 ou se contiver
-      TradeAPI, getgc, hookfunction, hookmetamethod, queue_on_teleport ou
-      ROBLOSECURITY: nada disso e necessario para farmar.
+      O motor e baixado UMA vez, verificado e gravado localmente. Nenhum motor
+      roda se for anterior ao v2 ou se contiver TradeAPI, getgc, hookfunction,
+      hookmetamethod, queue_on_teleport ou ROBLOSECURITY.
 
     Abrir e fechar: tecla RightControl
 ]]
@@ -65,7 +56,6 @@ local Http    = game:GetService("HttpService")
 local Tween   = game:GetService("TweenService")
 local LP      = Players.LocalPlayer
 
--- Resolvido uma vez. getgenv e uma chamada para fora do Lua.
 local ENV = (type(getgenv) == "function" and getgenv()) or _G
 local function env()
     return ENV
@@ -76,15 +66,15 @@ local canRead   = type(readfile) == "function" and type(isfile) == "function"
 local canFolder = type(makefolder) == "function" and type(isfolder) == "function"
 
 --==========================================================================
--- 1. Configuracao do motor (mesma forma que o 2.1 espera)
+-- 1. Configuracao do motor: TODAS as chaves do 2.1.2
 --==========================================================================
 local function defaults()
     return {
-        General = { TickSeconds = 0.5 },
+        General = { ScriptName = "Shxdrag Hub", TickSeconds = 0.5 },
         Farm = {
             Enabled  = true,
             BabyMode = true,
-            -- no motor 2.1 esta chave e obrigatoria: sem ela nenhuma necessidade roda
+            FastTravel = true,
             AutoNeeds = { Enabled = true, Skip = {} },
             Tasks = {
                 pet_me = true, salon = true, bored = true, cat_cafe = true,
@@ -93,7 +83,7 @@ local function defaults()
                 sick = true, camping = true, beach_party = true, mystery = true,
                 walk = true, ride = true,
             },
-            MultiNeed = { Enabled = true, GapSeconds = 1 },
+            MultiNeed = { Enabled = true, Kinds = { "pet_me", "hungry", "thirsty", "play" }, GapSeconds = 1 },
             SmartPriority = true,
             Priority = {
                 mystery = 51, pet_me = 50, hungry = 49, thirsty = 48, sick = 47,
@@ -119,11 +109,16 @@ local function defaults()
             PetOrder        = "youngest",
             PreferNeon      = true,
             FarmPetKinds    = {},
+            Focus           = "",   -- o motor le, mas nao declara (ver EXTRAS)
             BuyEgg          = true,
             EggToBuy        = "cracked_egg",
             MaxEggBuysPerSession = 0,
-            AutoPotions = { Enabled = true, Skip = {}, PetKinds = {} },
-            -- fundir pets nao tem volta: comeca desligado
+            AutoPotions = {
+                Enabled = true,
+                Potions = { "pet_age_potion", "tiny_pet_age_potion", "pet_bonus_bucks_potion" },
+                Skip = {},
+                PetKinds = {},
+            },
             AutoNeon    = { Enabled = false, Mega = false, Exclude = {} },
             AutoOpen    = { Enabled = true, Exclude = {} },
             AutoRejoin  = false,
@@ -134,6 +129,12 @@ local function defaults()
                 GhostGallery    = true,
                 GhostJoinByZone = true,
                 Hauntlet        = false,
+                HauntletMove        = "tween", -- EXTRA
+                HauntletMoveSeconds = 0.5,     -- EXTRA
+                HauntletFirst       = true,    -- EXTRA
+                HauntletSquad       = true,    -- EXTRA
+                HauntletSquadKey    = "",      -- EXTRA
+                AutoSkelicorn       = false,   -- EXTRA
                 Crypt           = true,
                 MummySpider     = true,
                 CryptOpen       = { "ladder" },
@@ -147,24 +148,50 @@ local function defaults()
                 PetPenSlots     = 4,
                 PetPenStock     = true,
                 PetPenStockMinBucks = 750,
-                CandyPets = { Enabled = false, Pick = {}, KeepCandy = 0 },
+                CandyPets = {
+                    Enabled = false,
+                    Pick = {},
+                    KeepCandy = 0,
+                    Buy = {
+                        { id = "halloween_2026_jump_scare", price = 40000, max = 1 },
+                        { id = "halloween_2026_jacobean_pigeon", price = 4000, max = 4 },
+                    },
+                },
             },
+            PetMeFocusSeconds = 7,
             FailureCooldownSeconds = 30,
             MaxConsecutiveFailures = 3,
             DisableMinutes = 15,
         },
-        -- a janela do proprio motor fica desligada (ver cabecalho)
-        Interface = { Enabled = false },
+        Interface = {
+            Enabled = false,
+            Keybind = "RightShift",
+            Toasts = true,
+            RememberSettings = true,
+            Theme = "Halloween",
+            Descriptions = false,
+            Autoload = "",
+            StartHidden = false,
+            UIScale = "Auto",
+            Language = "Auto",
+        },
         Logging = {
             ConsoleLevel = "OFF",
             FileLevel    = "DEBUG",
             FileEnabled  = false,
             SessionFile  = false,
+            Folder       = "ShxdragHub/logs",
             FlushSeconds = 5,
+            DuplicateWindowSeconds = 10,
             MaxLinesPerSession = 20000,
         },
-        -- no 2.1.2 o endereco de envio esta vazio; mandamos desligada mesmo assim
-        Telemetry = { Enabled = false },
+        Telemetry = {
+            Enabled = false,
+            Url = "",
+            Owner = "",
+            SummaryMinutes = 30,
+            IncludeInventory = false,
+        },
         Notifications = {
             Enabled = false,
             Webhooks = { Summary = "", Alerts = "" },
@@ -184,17 +211,31 @@ local function defaults()
             IncludeUsername = true,
             AlertCooldownSeconds = 60,
             MinSecondsBetweenMessages = 2.5,
+            MaxQueueSize = 50,
+            MaxRetries = 3,
         },
     }
 end
 
--- Preferencias do PAINEL. Nunca vao para o motor: ele recusa chaves que nao conhece.
+-- O motor 2.1.2 LE estas chaves mas nao as declara no Config.Defaults: na
+-- partida ele as descartaria como "Unknown setting". Saem da partida e entram
+-- na configuracao viva logo depois.
+local EXTRAS = {
+    ["Farm.Focus"] = true,
+    ["Farm.Event.AutoSkelicorn"] = true,
+    ["Farm.Event.HauntletMove"] = true,
+    ["Farm.Event.HauntletMoveSeconds"] = true,
+    ["Farm.Event.HauntletFirst"] = true,
+    ["Farm.Event.HauntletSquad"] = true,
+    ["Farm.Event.HauntletSquadKey"] = true,
+}
+
+-- Preferencias do PAINEL. Nunca vao para o motor.
 local function prefsPadrao()
     return {
         AutoIniciar = false,
         AbrirMinimizado = false,
         Animacoes = true,
-        -- -1 quer dizer "ainda nao escolhida", entao o painel abre no centro
         JanelaX = -1,
         JanelaY = -1,
     }
@@ -249,7 +290,17 @@ local function pedacos(caminho)
     return lista
 end
 
--- Um caminho que comeca com __pref__ aponta para as preferencias do painel.
+-- "Buy.1.price": o "1" de um caminho e o indice 1 de uma lista.
+local function chaveReal(node, parte)
+    if node[parte] == nil then
+        local numero = tonumber(parte)
+        if numero and node[numero] ~= nil then
+            return numero
+        end
+    end
+    return parte
+end
+
 local function raizDe(lista)
     if lista[1] == "__pref__" then
         return Pref, 2
@@ -264,7 +315,7 @@ local function getPath(caminho)
         if type(node) ~= "table" then
             return nil
         end
-        node = node[lista[indice]]
+        node = node[chaveReal(node, lista[indice])]
     end
     return node
 end
@@ -273,12 +324,12 @@ local function setPath(caminho, valor)
     local lista = pedacos(caminho)
     local node, inicio = raizDe(lista)
     for indice = inicio, #lista - 1 do
-        node = node[lista[indice]]
+        node = node[chaveReal(node, lista[indice])]
         if type(node) ~= "table" then
             return
         end
     end
-    node[lista[#lista]] = valor
+    node[chaveReal(node, lista[#lista])] = valor
 end
 
 --==========================================================================
@@ -308,21 +359,26 @@ local function saveConfig()
     return (pcall(writefile, CFG_FILE, texto))
 end
 
--- So copia o que existe no painel e tem o mesmo tipo. Listas (como os tipos de
--- pet favoritos) sao trocadas inteiras, desde que sejam listas de texto.
+-- So copia o que existe no painel e tem o mesmo tipo. Listas de texto sao
+-- trocadas inteiras; listas de tabelas (a loja de doces) sao mescladas item a item.
 local function mesclar(alvo, fonte)
     for chave, valor in pairs(fonte) do
         local atual = alvo[chave]
-        if ehLista(atual) and ehLista(valor) then
-            local texto = true
+        local soTexto = ehLista(atual) and ehLista(valor)
+        if soTexto then
             for _, item in ipairs(valor) do
                 if type(item) ~= "string" then
-                    texto = false
+                    soTexto = false
                 end
             end
-            if texto then
-                alvo[chave] = deepCopy(valor)
+            for _, item in ipairs(atual) do
+                if type(item) ~= "string" then
+                    soTexto = false
+                end
             end
+        end
+        if soTexto then
+            alvo[chave] = deepCopy(valor)
         elseif type(valor) == "table" and type(atual) == "table" then
             mesclar(atual, valor)
         elseif atual ~= nil and type(valor) == type(atual) then
@@ -412,9 +468,7 @@ local function fetchEngine(forcar)
     return corpo, "baixado e fixado"
 end
 
--- O motor 2.1.2 chama estas duas funcoes e nao as define. Sem Farm.Focus (que o
--- motor tambem nao aceita na configuracao) elas sempre respondem "sem foco", que
--- e exatamente o comportamento normal de pocoes, neon, Pet Pen e Cripta.
+-- O motor 2.1.2 chama estas duas funcoes e nao as define.
 local REMENDO_FOCO = [[
     function GameConstants.focusOf(farm)
         local focus = type(farm) == "table" and farm.Focus
@@ -457,7 +511,7 @@ local function isRunning()
     return farmApi() ~= nil
 end
 
--- A configuracao VIVA do motor rodando (o 2.1 a le a cada passo).
+-- A configuracao VIVA do motor rodando.
 local function configDoMotor()
     local api = farmApi()
     return api and type(api.Config) == "table" and api.Config or nil
@@ -469,13 +523,13 @@ local function lerNoMotor(caminho)
         if type(node) ~= "table" then
             return nil
         end
-        node = node[parte]
+        node = node[chaveReal(node, parte)]
     end
     return node
 end
 
--- Grava um valor na configuracao viva. Nunca cria chave nova nem troca o tipo
--- de uma: o que o motor nao conhece, ele nao recebe.
+-- Grava um valor na configuracao viva. Nao cria chave nova nem troca o tipo de
+-- uma, exceto as EXTRAS, que o motor le sem declarar.
 local function gravarNoMotor(caminho, valor)
     local node = configDoMotor()
     if not node then
@@ -483,35 +537,33 @@ local function gravarNoMotor(caminho, valor)
     end
     local lista = pedacos(caminho)
     for indice = 1, #lista - 1 do
-        node = node[lista[indice]]
+        node = node[chaveReal(node, lista[indice])]
         if type(node) ~= "table" then
             return false
         end
     end
-    local chave = lista[#lista]
-    if node[chave] == nil or type(node[chave]) ~= type(valor) then
+    local chave = chaveReal(node, lista[#lista])
+    if node[chave] == nil and not EXTRAS[caminho] then
+        return false
+    end
+    if node[chave] ~= nil and type(node[chave]) ~= type(valor) then
         return false
     end
     node[chave] = deepCopy(valor)
     return true
 end
 
--- O motor le estas so no inicio: mudar com ele rodando pede reinicio.
-local SO_NO_INICIO = {
-    ["General.TickSeconds"] = true,
-    ["Logging.FileEnabled"] = true,
-    ["Logging.FileLevel"] = true,
-    ["Logging.SessionFile"] = true,
-    ["Logging.FlushSeconds"] = true,
-    ["Logging.MaxLinesPerSession"] = true,
-    ["Telemetry.Enabled"] = true,
-    ["Interface.Enabled"] = true,
-}
+-- O motor le estas so na partida: mudar com ele rodando pede reinicio.
+local function soNoInicio(caminho)
+    return caminho == "General.TickSeconds" or caminho == "General.ScriptName"
+        or caminho == "Logging.FileEnabled" or caminho == "Logging.FileLevel"
+        or caminho == "Logging.SessionFile" or caminho == "Logging.FlushSeconds"
+        or caminho == "Logging.MaxLinesPerSession" or caminho == "Logging.Folder"
+        or string.sub(caminho, 1, 10) == "Telemetry." or string.sub(caminho, 1, 10) == "Interface."
+end
 
 local precisaReiniciar = false
 
--- Gravar a cada clique custa um JSONEncode da configuracao inteira mais uma
--- escrita em disco. Uma rajada de cliques gera UMA gravacao.
 local gravacaoPendente = false
 local function agendarGravacao()
     if gravacaoPendente then
@@ -530,7 +582,7 @@ local function mudou(caminho)
     if not isRunning() or type(caminho) ~= "string" or string.sub(caminho, 1, 9) == "__pref__." then
         return
     end
-    if SO_NO_INICIO[caminho] then
+    if soNoInicio(caminho) then
         if lerNoMotor(caminho) ~= getPath(caminho) then
             precisaReiniciar = true
         end
@@ -558,13 +610,42 @@ local function marcarSujo()
         return
     end
     for _, caminho in ipairs(folhas(Cfg, "", {})) do
-        if SO_NO_INICIO[caminho] then
+        if soNoInicio(caminho) then
             if lerNoMotor(caminho) ~= getPath(caminho) then
                 precisaReiniciar = true
             end
         else
             gravarNoMotor(caminho, getPath(caminho))
         end
+    end
+end
+
+-- O caminho inverso: traz para o painel o que esta no motor rodando (depois de
+-- uma predefinicao do proprio motor, por exemplo).
+local function puxarDoMotor()
+    if not configDoMotor() then
+        return 0
+    end
+    local trazidos = 0
+    for _, caminho in ipairs(folhas(Cfg, "", {})) do
+        local valor = lerNoMotor(caminho)
+        if valor ~= nil and type(valor) == type(getPath(caminho)) then
+            setPath(caminho, deepCopy(valor))
+            trazidos = trazidos + 1
+        end
+    end
+    agendarGravacao()
+    return trazidos
+end
+
+local function tirar(raiz, caminho)
+    local lista = pedacos(caminho)
+    local node = raiz
+    for indice = 1, #lista - 1 do
+        node = type(node) == "table" and node[lista[indice]] or nil
+    end
+    if type(node) == "table" then
+        node[lista[#lista]] = nil
     end
 end
 
@@ -596,13 +677,14 @@ local function startFarm()
     end
 
     gravacaoPendente = false
-    saveConfig()   -- antes de iniciar vale gravar na hora
+    saveConfig()
     local enviar = deepCopy(Cfg)
-    enviar.Interface = { Enabled = false }
-    enviar.Farm.Event.Hauntlet = false
+    for caminho in pairs(EXTRAS) do
+        tirar(enviar, caminho)
+    end
     local aviso = ""
     if remendo == "falhou" then
-        -- sem o remendo estas quatro quebram no motor 2.1.2
+        -- sem o remendo estas quebram o laco inteiro no motor 2.1.2
         enviar.Farm.AutoPotions.Enabled = false
         enviar.Farm.AutoNeon.Enabled = false
         enviar.Farm.AutoNeon.Mega = false
@@ -617,6 +699,10 @@ local function startFarm()
     if not ok then
         setStatus("erro ao iniciar: " .. tostring(erroExecucao))
         return
+    end
+    -- as EXTRAS entram agora, na configuracao viva
+    for caminho in pairs(EXTRAS) do
+        gravarNoMotor(caminho, getPath(caminho))
     end
     precisaReiniciar = false
     setStatus(string.format("iniciado: motor v%s, %s, remendo %s%s", tostring(versaoDo(fonte) or "?"), como, remendo, aviso))
@@ -656,7 +742,6 @@ local COR = {
     destaque  = Color3.fromRGB(98, 136, 238),
 }
 
--- TweenInfo e imutavel, entao guardar e reusar e seguro.
 local infosTween = {}
 local function infoTween(tempo, estilo, direcao)
     local chave = tostring(tempo) .. "|" .. tostring(estilo) .. "|" .. tostring(direcao)
@@ -698,7 +783,6 @@ local function canto(pai, raio)
     novo("UICorner", { CornerRadius = UDim.new(0, raio or 6) }, pai)
 end
 
--- realce suave ao passar o mouse
 local function brilho(botao, corNormal, corHover)
     botao.MouseEnter:Connect(function()
         animar(botao, 0.12, { BackgroundColor3 = corHover })
@@ -729,8 +813,6 @@ local tela = novo("ScreenGui", {
     DisplayOrder = 9999,
 }, telaPai)
 
--- Ancora no CANTO SUPERIOR ESQUERDO: ao voltar do minimizado a janela cresce
--- so para baixo e a barra de titulo nunca sai da tela.
 local janela = novo("Frame", {
     AnchorPoint = Vector2.new(0, 0),
     Position = UDim2.fromOffset(0, 0),
@@ -764,7 +846,7 @@ novo("TextLabel", {
     TextSize = 15,
     TextColor3 = COR.texto,
     TextXAlignment = Enum.TextXAlignment.Left,
-    Text = "AdoptMe Farm 2.1  |  painel",
+    Text = "AdoptMe Farm 2.1  |  painel completo",
 }, barra)
 
 local pontoEstado = novo("Frame", {
@@ -817,8 +899,6 @@ local colunaAbas = novo("Frame", {
 }, corpo)
 novo("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder }, colunaAbas)
 
--- Cada aba ganha a sua propria area de rolagem, criada na primeira vez que
--- voce abre a aba e guardada depois.
 local caixaConteudo = novo("Frame", {
     Size = UDim2.new(1, -188, 1, -62),
     Position = UDim2.fromOffset(176, 10),
@@ -886,15 +966,13 @@ function setStatus(texto)
     animar(rotuloStatus, 0.25, { TextTransparency = 0 })
 end
 
--- Declaradas aqui porque o botao de minimizar e as predefinicoes aparecem antes
--- no arquivo e precisam chamar estas funcoes.
 local abrirAba, abaAtiva, repintarTudo
 
 --==========================================================================
--- 5. Geometria da janela: onde ela pode ficar
+-- 5. Geometria da janela
 --==========================================================================
 local minimizado = false
-local posJanela = Vector2.new(0, 0)   -- canto superior esquerdo, em pixels
+local posJanela = Vector2.new(0, 0)
 
 local function alturaAlvo()
     return minimizado and ALT_BARRA or ALT
@@ -908,7 +986,6 @@ local function tamanhoTela()
     return tamanho
 end
 
--- Durante o arraste a unica regra e: a barra de titulo nao sai da tela.
 local function ajustarArrasto(x, y)
     local tamanho = tamanhoTela()
     local maiorY = tamanho.Y - ALT_BARRA - MARGEM
@@ -919,8 +996,6 @@ local function ajustarArrasto(x, y)
         math.clamp(y, MARGEM, maiorY)
 end
 
--- Ao crescer, se a altura inteira nao couber abaixo, a janela sobe APENAS o
--- necessario para caber.
 local function encaixar(altura)
     local tamanho = tamanhoTela()
     local x, y = ajustarArrasto(posJanela.X, posJanela.Y)
@@ -944,7 +1019,6 @@ local function posicaoInicial()
     return math.floor((tamanho.X - LARG) / 2), math.floor((tamanho.Y - ALT) / 2)
 end
 
--- Um tween de janela por vez. Dois ao mesmo tempo brigavam pela posicao.
 local tweenJanela = nil
 local function animarJanela(tempo, props, estilo)
     if tweenJanela then
@@ -957,14 +1031,13 @@ local function animarJanela(tempo, props, estilo)
     return tweenJanela
 end
 
--- a tela mudou de tamanho, girou o celular por exemplo
 tela:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
     local x, y = encaixar(alturaAlvo())
     colocar(x, y)
 end)
 
 --==========================================================================
--- 6. Arraste: UMA conexao de movimento, e so enquanto algo esta arrastando
+-- 6. Arraste
 --==========================================================================
 local arrastoMover = nil
 local arrastoFim   = nil
@@ -1050,7 +1123,6 @@ local function aplicarMinimizar(animado)
         end
     end
 
-    -- Altura e posicao no MESMO tween.
     if animado then
         posJanela = Vector2.new(x, y)
         animarJanela(0.22, {
@@ -1068,7 +1140,6 @@ btnMinimizar.MouseButton1Click:Connect(function()
     Pref.AbrirMinimizado = minimizado
     agendarGravacao()
     aplicarMinimizar(true)
-    -- a chave "Abrir ja minimizado" mostra este mesmo valor
     if repintarTudo then
         repintarTudo()
     end
@@ -1083,7 +1154,6 @@ local function proximaOrdem()
     return ordem
 end
 
--- Validos somente enquanto uma pagina esta sendo construida.
 local areaAtual, listaAtual = nil, nil
 
 local function registrar(funcao)
@@ -1115,8 +1185,6 @@ local function tituloSecao(texto)
     return frame
 end
 
--- item.ler / item.gravar trocam o "valor booleano no caminho" por outra regra
--- (usado pelas chaves que entram e saem de uma lista).
 local function criarToggle(item)
     local ler = item.ler or function()
         return getPath(item.path) == true
@@ -1213,8 +1281,7 @@ local function criarToggle(item)
 end
 
 -- Liga ou desliga UM valor dentro de uma lista da configuracao.
--- inverso = a chave fica LIGADA quando o valor NAO esta na lista (listas de
--- "pular"). ordem = a ordem certa da lista, mantida ao religar.
+-- inverso = ligada quando o valor NAO esta na lista. ordem = ordem certa da lista.
 local function criarMembro(item)
     local function ler()
         local dentro = listaContem(getPath(item.path), item.valor)
@@ -1267,7 +1334,7 @@ local function criarSlider(item)
         BackgroundTransparency = 1,
         Font = Enum.Font.Gotham,
         TextSize = 13,
-        TextColor3 = COR.texto,
+        TextColor3 = item.alerta and COR.aviso or COR.texto,
         TextXAlignment = Enum.TextXAlignment.Left,
         Text = item.label,
     }, frame)
@@ -1324,7 +1391,6 @@ local function criarSlider(item)
         end
     end
 
-    -- Um clique simples ja leva o pino para onde voce clicou.
     trilho.InputBegan:Connect(function(entrada)
         if entrada.UserInputType == Enum.UserInputType.MouseButton1
             or entrada.UserInputType == Enum.UserInputType.Touch then
@@ -1355,7 +1421,7 @@ local function criarCiclo(item)
         BackgroundTransparency = 1,
         Font = Enum.Font.Gotham,
         TextSize = 13,
-        TextColor3 = COR.texto,
+        TextColor3 = item.alerta and COR.aviso or COR.texto,
         TextXAlignment = Enum.TextXAlignment.Left,
         Text = item.label,
     }, frame)
@@ -1399,7 +1465,7 @@ local function criarCiclo(item)
     return frame
 end
 
--- Campo de texto. item.lista = o texto e uma lista separada por virgula.
+-- Campo de texto. item.lista = lista separada por virgula.
 -- item.validar(texto) -> ok, motivo: um valor recusado nao e gravado.
 local function criarCampo(item)
     local frame = linhaBase(54)
@@ -1418,7 +1484,7 @@ local function criarCampo(item)
         BackgroundTransparency = 1,
         Font = Enum.Font.Gotham,
         TextSize = 13,
-        TextColor3 = COR.texto,
+        TextColor3 = item.alerta and COR.aviso or COR.texto,
         TextXAlignment = Enum.TextXAlignment.Left,
         Text = item.label,
     }, frame)
@@ -1470,7 +1536,6 @@ local function criarCampo(item)
     end)
 
     registrar(function()
-        -- nao atropela o que voce esta digitando
         if not caixa:IsFocused() then
             caixa.Text = mostrar()
         end
@@ -1478,10 +1543,8 @@ local function criarCampo(item)
     return frame
 end
 
--- toggle de preferencia do painel (nao vai para o motor)
 local function criarPref(chave, label, desc)
-    local frame = criarToggle({ path = "__pref__." .. chave, label = label, desc = desc })
-    return frame
+    return criarToggle({ path = "__pref__." .. chave, label = label, desc = desc })
 end
 
 local function criarBotao(texto, cor, aoClicar)
@@ -1525,7 +1588,6 @@ local function criarTexto(texto, cor, altura)
     return frame, rotulo
 end
 
--- mesmos padroes que o motor usa: so webhooks do Discord
 local PADROES_WEBHOOK = {
     "^https://discord%.com/api/webhooks/%d+/[%w%-_]+$",
     "^https://discordapp%.com/api/webhooks/%d+/[%w%-_]+$",
@@ -1551,6 +1613,14 @@ local function validarId(id)
     return false, "o ID do Discord tem so numeros: nada foi gravado"
 end
 
+-- o mesmo padrao do motor: so endereco de Cloudflare Worker
+local function validarRelay(url)
+    if url == "" or string.match(url, "^https://[%w%-]+%.[%w%-]+%.workers%.dev/[%w%-/]*$") then
+        return true
+    end
+    return false, "o motor so aceita https://<nome>.<conta>.workers.dev/...: nada foi gravado"
+end
+
 --==========================================================================
 -- 9. Paginas
 --==========================================================================
@@ -1567,6 +1637,7 @@ local LENTAS = {
     salon = true, school = true, pizza_party = true, cat_cafe = true,
     camping = true, beach_party = true, bored = true, walk = true, ride = true,
 }
+local RAPIDAS_ESPERA = { { "pet_me", "Carinho" }, { "hungry", "Comida" }, { "thirsty", "Agua" }, { "play", "Brinquedo" } }
 local POCOES = {
     { "pet_age_potion", "pocao de idade" },
     { "tiny_pet_age_potion", "pocao de idade pequena" },
@@ -1579,9 +1650,12 @@ local CRIPTA = {
     { "candy_corn_pile_small", "Pilha pequena de doces" },
 }
 local DOCES = {
-    { "halloween_2026_jump_scare", "Jump Scare, 40.000 doces" },
-    { "halloween_2026_jacobean_pigeon", "Pombo Jacobino, 4.000 doces" },
+    { "halloween_2026_jump_scare", "Jump Scare" },
+    { "halloween_2026_jacobean_pigeon", "Pombo Jacobino" },
 }
+local TECLAS = { "RightShift", "LeftShift", "RightControl", "LeftControl", "RightAlt", "LeftAlt", "Insert", "Home",
+    "End", "Delete", "PageUp", "PageDown", "F1", "F2", "F3", "F4", "F6", "F7", "F8", "F9", "K", "M", "P" }
+
 local function ids(lista)
     local saida = {}
     for _, par in ipairs(lista) do
@@ -1607,6 +1681,8 @@ aba("Farm", function()
         desc = "Entra no time Babies para fazer tambem as necessidades do bebe." })
     criarToggle({ path = "Farm.GameTravel", label = "Usar as portas do proprio jogo" })
     criarToggle({ path = "Farm.HomeByRespawn", label = "Voltar pra casa renascendo" })
+    criarToggle({ path = "Farm.FastTravel", label = "Viagem rapida", alerta = true,
+        desc = "O motor 2.1.2 nao le esta chave." })
     criarToggle({ path = "Farm.AutoAcceptMenu", label = "Apertar Play no menu sozinho" })
     criarToggle({ path = "Farm.AntiAfk", label = "Anti-AFK",
         desc = "Clique virtual quando o Roblox avisa que voce esta parado." })
@@ -1621,11 +1697,21 @@ aba("Farm", function()
         opcoes = { "youngest", "oldest" }, nomes = { youngest = "mais novo", oldest = "mais velho" } })
     criarCampo({ path = "Farm.FarmPetKinds", label = "Tipos de pet com prioridade",
         dica = "ex.: dog, cat   vazio = qualquer um", lista = true })
+    criarCampo({ path = "Farm.Focus", label = "Megar um pet (Focus)", alerta = true,
+        dica = "um tipo de pet, ex.: dog   vazio = desligado" })
+    criarTexto("Focus: incompleto no 2.1.2. Limita pocoes, neon e Pet Pen a esse tipo; o resto da "
+        .. "funcao (comprar e chocar ovos em repeticao) nao esta no motor.", COR.aviso, 42)
 
     tituloSecao("pocoes")
     criarToggle({ path = "Farm.AutoPotions.Enabled", label = "Usar pocoes no pet que cresce" })
+    criarTexto("Pocoes que o farm conhece:", COR.fraco, 18)
     for _, pocao in ipairs(POCOES) do
-        criarMembro({ path = "Farm.AutoPotions.Skip", valor = pocao[1], label = "Pode usar " .. pocao[2],
+        criarMembro({ path = "Farm.AutoPotions.Potions", valor = pocao[1], label = "Conhece a " .. pocao[2],
+            ordem = ids(POCOES) })
+    end
+    criarTexto("E dessas, quais pode usar:", COR.fraco, 18)
+    for _, pocao in ipairs(POCOES) do
+        criarMembro({ path = "Farm.AutoPotions.Skip", valor = pocao[1], label = "Pode usar a " .. pocao[2],
             inverso = true })
     end
     criarCampo({ path = "Farm.AutoPotions.PetKinds", label = "Pocoes so nestes tipos",
@@ -1677,6 +1763,7 @@ aba("Tarefas", function()
             Cfg.Farm.Tasks[tarefa[1]] = true
         end
         Cfg.Farm.AutoNeeds.Enabled = true
+        Cfg.Farm.AutoNeeds.Skip = {}
         marcarSujo()
         repintarTudo()
         setStatus("todas as tarefas ligadas")
@@ -1704,9 +1791,21 @@ aba("Tarefas", function()
         end
     end
 
+    tituloSecao("lista de pular do motor")
+    criarTexto("Outra forma de desligar uma necessidade: a lista Skip do motor. Ligada aqui = pulada.",
+        COR.fraco, 30)
+    for _, tarefa in ipairs(TAREFAS) do
+        criarMembro({ path = "Farm.AutoNeeds.Skip", valor = tarefa[1], label = "Pular: " .. tarefa[2],
+            ordem = ids(TAREFAS) })
+    end
+
     tituloSecao("enquanto espera")
     criarToggle({ path = "Farm.MultiNeed.Enabled", label = "Necessidades rapidas durante a espera",
-        desc = "Parado num lugar esperando, faz carinho, comida, agua e brinquedo." })
+        desc = "Parado num lugar esperando, faz as rapidas marcadas abaixo." })
+    for _, rapida in ipairs(RAPIDAS_ESPERA) do
+        criarMembro({ path = "Farm.MultiNeed.Kinds", valor = rapida[1], label = "Durante a espera: " .. rapida[2],
+            ordem = ids(RAPIDAS_ESPERA) })
+    end
     criarSlider({ path = "Farm.MultiNeed.GapSeconds", label = "Pausa entre duas rapidas",
         min = 0, max = 10, passo = 0.5, sufixo = " s" })
 end)
@@ -1747,6 +1846,20 @@ aba("Evento", function()
     criarToggle({ path = "Farm.Event.GhostJoinByZone", label = "Entrar pelo circulo da Mansao",
         desc = "Como o Sim do aviso do jogo. A forma mais segura de entrar." })
 
+    tituloSecao("hauntlet")
+    criarToggle({ path = "Farm.Event.Hauntlet", label = "Jogar o Hauntlet", alerta = true,
+        desc = "Incompleto no 2.1.2: faltam as funcoes de andar na corrida. Vai ao Hotel e falha." })
+    criarCiclo({ path = "Farm.Event.HauntletMove", label = "Como chega no circulo da porta", alerta = true,
+        opcoes = { "tween", "walk", "tp" }, nomes = { tween = "deslizando", walk = "andando", tp = "teleporte" } })
+    criarSlider({ path = "Farm.Event.HauntletMoveSeconds", label = "Tempo do deslize", alerta = true,
+        min = 0.1, max = 5, passo = 0.1, sufixo = " s" })
+    criarToggle({ path = "Farm.Event.HauntletFirst", label = "Hauntlet antes do Ghost Gallery", alerta = true,
+        desc = "O motor 2.1.2 nao le esta chave." })
+    criarToggle({ path = "Farm.Event.HauntletSquad", label = "Suas contas jogam em equipe", alerta = true,
+        desc = "Celular, chaves e varinha por turnos entre as suas contas na mesma corrida." })
+    criarCampo({ path = "Farm.Event.HauntletSquadKey", label = "Chave privada do esquadrao", alerta = true,
+        dica = "no 2.1.2 nada usa esta chave" })
+
     tituloSecao("cripta")
     criarToggle({ path = "Farm.Event.Crypt", label = "Usar as chaves enferrujadas" })
     criarToggle({ path = "Farm.Event.MummySpider", label = "Pegar a Aranha Mumia no fundo" })
@@ -1755,6 +1868,8 @@ aba("Evento", function()
         criarMembro({ path = "Farm.Event.CryptOpen", valor = recompensa[1], label = recompensa[2],
             ordem = ids(CRIPTA) })
     end
+    criarToggle({ path = "Farm.Event.AutoSkelicorn", label = "Skelicorn automatico", alerta = true,
+        desc = "Incompleto no 2.1.2: faltam os ids da alavanca. Ligado, a Cripta falha toda vez." })
 
     tituloSecao("ninho e gato")
     criarToggle({ path = "Farm.Event.PigeonNest", label = "Levar gravetos ao ninho do Hotel" })
@@ -1777,16 +1892,17 @@ aba("Evento", function()
 
     tituloSecao("loja de doces")
     criarToggle({ path = "Farm.Event.CandyPets.Enabled", label = "Comprar pets com doces", alerta = true,
-        desc = "Gasta doces nos pets marcados abaixo, quantos os doces pagarem." })
-    for _, pet in ipairs(DOCES) do
-        criarMembro({ path = "Farm.Event.CandyPets.Pick", valor = pet[1], label = pet[2], ordem = ids(DOCES) })
+        desc = "Gasta doces nos pets marcados abaixo." })
+    for indice, pet in ipairs(DOCES) do
+        criarMembro({ path = "Farm.Event.CandyPets.Pick", valor = pet[1], label = "Comprar " .. pet[2],
+            ordem = ids(DOCES) })
+        criarSlider({ path = "Farm.Event.CandyPets.Buy." .. indice .. ".price", label = pet[2] .. ", preco",
+            min = 0, max = 200000, passo = 1000, sufixo = " doces" })
+        criarSlider({ path = "Farm.Event.CandyPets.Buy." .. indice .. ".max", label = pet[2] .. ", quantos ter",
+            min = 0, max = 20, sufixo = "   0 = sem limite" })
     end
     criarSlider({ path = "Farm.Event.CandyPets.KeepCandy", label = "Guardar sempre",
         min = 0, max = 200000, passo = 5000, sufixo = " doces" })
-
-    tituloSecao("hauntlet")
-    criarTexto("Fica desligado. No motor 2.1.2 faltam as funcoes que andam dentro da corrida, "
-        .. "entao a tarefa iria ao Hotel e falharia em toda rodada.", COR.aviso, 42)
 end)
 
 ---------------------------------------------------------------- Avancado
@@ -1796,6 +1912,10 @@ aba("Avancado", function()
     tituloSecao("ritmo")
     criarSlider({ path = "General.TickSeconds", label = "Intervalo do laco principal",
         min = 0.1, max = 5, passo = 0.1, sufixo = " s   vale ao reiniciar" })
+    criarSlider({ path = "Farm.PetMeFocusSeconds", label = "Tempo de carinho", alerta = true,
+        min = 3, max = 20, sufixo = " s   o 2.1.2 nao le" })
+    criarCampo({ path = "General.ScriptName", label = "Nome do motor nas mensagens",
+        dica = "vale ao reiniciar" })
 
     tituloSecao("falhas")
     criarSlider({ path = "Farm.FailureCooldownSeconds", label = "Espera apos uma falha",
@@ -1817,7 +1937,7 @@ aba("Avancado", function()
 
     tituloSecao("experimental")
     criarToggle({ path = "Farm.HouseDoorExit", label = "Sair de casa pela porta", alerta = true,
-        desc = "No teste do autor isto nunca funcionou. Deixe desligado." })
+        desc = "No teste do autor isto nunca funcionou." })
 
     tituloSecao("painel")
     criarPref("AutoIniciar", "Iniciar o farm junto com o painel")
@@ -1827,10 +1947,17 @@ end)
 
 ------------------------------------------------------------- Privacidade
 aba("Privacidade", function()
-    criarTexto("Telemetria: no motor 2.1.2 o endereco de envio ao autor esta vazio, e o painel ainda "
-        .. "manda a telemetria desligada. Nada sai daqui para o autor.", COR.ligado, 42)
-    criarTexto("A janela propria do motor fica desligada: ela baixaria uma biblioteca de interface do "
-        .. "GitHub e, nesta versao, nem chega a abrir.", COR.fraco, 42)
+    tituloSecao("telemetria, vale ao reiniciar")
+    criarTexto("No 2.1.2 o endereco do autor esta vazio: ligada sem endereco, nada sai. Com um "
+        .. "endereco, seu nome do Roblox, seu ID e um resumo da sessao vao para ele.", COR.aviso, 42)
+    criarToggle({ path = "Telemetry.Enabled", label = "Enviar telemetria", alerta = true })
+    criarCampo({ path = "Telemetry.Url", label = "Endereco do relay", alerta = true,
+        dica = "https://nome.conta.workers.dev/log   vazio = nada sai", validar = validarRelay })
+    criarCampo({ path = "Telemetry.Owner", label = "Nome do dono do relay", dica = "so aparece no relatorio" })
+    criarSlider({ path = "Telemetry.SummaryMinutes", label = "Enviar a cada",
+        min = 5, max = 120, sufixo = " min" })
+    criarToggle({ path = "Telemetry.IncludeInventory", label = "Incluir resumo do inventario", alerta = true,
+        desc = "Contagem de itens e pets no relatorio." })
 
     tituloSecao("webhook do discord, seu")
     criarTexto("Opcional e so para voce. Vazio nao envia nada. So aceita endereco do Discord.", COR.fraco, 26)
@@ -1868,18 +1995,61 @@ aba("Privacidade", function()
         min = 10, max = 600, sufixo = " s" })
     criarSlider({ path = "Notifications.MinSecondsBetweenMessages", label = "Espera entre mensagens",
         min = 1, max = 10, passo = 0.5, sufixo = " s" })
+    criarSlider({ path = "Notifications.MaxQueueSize", label = "Mensagens na fila, no maximo",
+        min = 5, max = 200, passo = 5 })
+    criarSlider({ path = "Notifications.MaxRetries", label = "Tentativas por mensagem",
+        min = 0, max = 10 })
 
     tituloSecao("registro")
     criarCiclo({ path = "Logging.ConsoleLevel", label = "Mensagens no console",
         opcoes = { "OFF", "INFO", "DEBUG", "SUCCESS", "WARN", "ERROR" } })
     criarToggle({ path = "Logging.FileEnabled", label = "Gravar arquivo de log, vale ao reiniciar" })
     criarCiclo({ path = "Logging.FileLevel", label = "Nivel do arquivo",
-        opcoes = { "DEBUG", "INFO", "SUCCESS", "WARN", "ERROR" } })
+        opcoes = { "OFF", "DEBUG", "INFO", "SUCCESS", "WARN", "ERROR" } })
     criarToggle({ path = "Logging.SessionFile", label = "Gravar estado da sessao" })
+    criarCampo({ path = "Logging.Folder", label = "Pasta do log", dica = "ShxdragHub/logs" })
     criarSlider({ path = "Logging.FlushSeconds", label = "Gravar em disco a cada",
+        min = 1, max = 60, sufixo = " s" })
+    criarSlider({ path = "Logging.DuplicateWindowSeconds", label = "Juntar linhas repetidas por",
         min = 1, max = 60, sufixo = " s" })
     criarSlider({ path = "Logging.MaxLinesPerSession", label = "Maximo de linhas por sessao",
         min = 1000, max = 50000, passo = 1000 })
+end)
+
+-------------------------------------------------------- Janela do motor
+aba("Janela motor", function()
+    criarTexto("A janela PROPRIA do motor. Baixa a biblioteca WindUI do GitHub ao abrir e, no 2.1.2, "
+        .. "chama funcoes de outra biblioteca: o mais provavel e nao abrir. Ligada, ela tambem le "
+        .. "AdoptMeFarm/window_settings.txt, que pode passar por cima das opcoes deste painel.",
+        COR.aviso, 70)
+    criarToggle({ path = "Interface.Enabled", label = "Abrir a janela do motor ao iniciar", alerta = true })
+    criarBotao("ABRIR A JANELA DO MOTOR AGORA", COR.linha, function()
+        local api = farmApi()
+        if not api or type(api.OpenInterface) ~= "function" then
+            setStatus("inicie o farm primeiro")
+            return
+        end
+        task.spawn(function()
+            local ok, abriu = pcall(api.OpenInterface)
+            setStatus((ok and abriu) and "janela do motor aberta"
+                or "a janela do motor nao abriu (veja o console, F9)")
+        end)
+    end)
+
+    tituloSecao("opcoes dela, valem ao reiniciar")
+    criarCiclo({ path = "Interface.Keybind", label = "Tecla de mostrar e esconder", opcoes = TECLAS })
+    criarToggle({ path = "Interface.Toasts", label = "Avisos de chave, neon, compra e rodada" })
+    criarToggle({ path = "Interface.RememberSettings", label = "Lembrar o que mudar nela" })
+    criarCiclo({ path = "Interface.Theme", label = "Tema",
+        opcoes = { "Halloween", "Default", "Fresh", "Dark Minimal" } })
+    criarToggle({ path = "Interface.Descriptions", label = "Linhas de ajuda" })
+    criarCampo({ path = "Interface.Autoload", label = "Configuracao salva para carregar",
+        dica = "nome de uma config da janela   vazio = nenhuma" })
+    criarToggle({ path = "Interface.StartHidden", label = "Comecar escondida" })
+    criarCiclo({ path = "Interface.UIScale", label = "Tamanho",
+        opcoes = { "Auto", "0.5", "0.6", "0.7", "0.8", "0.9", "1", "1.1", "1.25" } })
+    criarCiclo({ path = "Interface.Language", label = "Idioma",
+        opcoes = { "Auto", "pt", "en", "es", "tr" } })
 end)
 
 ------------------------------------------------------------------ Status
@@ -1922,7 +2092,8 @@ local function textoStatus(api, s)
         estado = "esperando o jogo carregar"
     end
     return table.concat({
-        "Motor v" .. tostring(s.version or api.Version) .. "  |  " .. estado,
+        "Motor v" .. tostring(s.version or api.Version) .. "  |  " .. estado
+            .. (s.preset and ("  |  predefinicao " .. tostring(s.preset)) or ""),
         string.format("Sessao: %d min  |  necessidades feitas: %s", tonumber(s.minutes) or 0, tostring(s.needsDone or 0)),
         "Tarefa agora: " .. tostring(s.task or "none") .. (s.sideTask and ("  +  " .. tostring(s.sideTask)) or ""),
         "Lugar: " .. tostring(s.place or "?") .. "  |  time: " .. tostring(s.team or "?"),
@@ -1956,6 +2127,14 @@ local function acaoRapida(nome, rotulo)
     end)
 end
 
+local PREDEF_MOTOR = {
+    { "Off", "TUDO DESLIGADO" },
+    { "Balanced", "AUTOFARM COMPLETO" },
+    { "Speedrun", "SPEEDRUN DA ARANHA MUMIA" },
+    { "EventOnly", "SO O EVENTO" },
+    { "NeedsOnly", "SO AS NECESSIDADES" },
+}
+
 aba("Status", function()
     local _, rotulo = criarTexto("", COR.texto, 210)
     rotulo.TextSize = 12
@@ -1982,11 +2161,42 @@ aba("Status", function()
     acaoRapida("ClaimPetPen", "COLETAR O PET PEN AGORA")
     acaoRapida("RetryDisabled", "TENTAR DE NOVO O QUE ESTA EM PAUSA")
     acaoRapida("TestWebhook", "ENVIAR TESTE PARA O MEU WEBHOOK")
+    criarBotao("RELATORIO DO MOTOR NO CONSOLE (F9)", COR.linha, function()
+        local api = farmApi()
+        if not api or type(api.Disclosure) ~= "function" then
+            setStatus("inicie o farm primeiro")
+            return
+        end
+        pcall(api.Disclosure)
+        setStatus("relatorio impresso no console, F9")
+    end)
 
-    tituloSecao("predefinicoes")
+    tituloSecao("predefinicoes do motor")
+    criarTexto("As do proprio autor. Aplicam no motor rodando e trazem os valores para este painel.",
+        COR.fraco, 30)
+    for _, predef in ipairs(PREDEF_MOTOR) do
+        criarBotao(predef[2], COR.linha, function()
+            local api = farmApi()
+            if not api or type(api.ApplyPreset) ~= "function" then
+                setStatus("inicie o farm primeiro: as predefinicoes do motor vivem nele")
+                return
+            end
+            local ok, feito, nome = pcall(api.ApplyPreset, predef[1])
+            if not ok or not feito then
+                setStatus("nao aplicou: " .. tostring(ok and nome or feito))
+                return
+            end
+            local trazidos = puxarDoMotor()
+            repintarTudo()
+            setStatus(string.format("predefinicao %s aplicada, %d opcoes trazidas para o painel", tostring(nome), trazidos))
+        end)
+    end
+
+    tituloSecao("predefinicoes do painel")
     criarBotao("LIGAR TUDO", COR.linha, function()
-        -- de fora: o que nao tem volta, gasta doces, sai do servidor ou esta quebrado
-        local naoLigar = { HouseDoorExit = true, Hauntlet = true, AutoRejoin = true, FoodBowlTrip = true }
+        -- de fora: o que nao tem volta, gasta doces, sai do servidor ou esta incompleto
+        local naoLigar = { HouseDoorExit = true, Hauntlet = true, AutoRejoin = true, FoodBowlTrip = true,
+            AutoSkelicorn = true, HauntletFirst = true, HauntletSquad = true, FastTravel = true }
         local naoEntrar = { AutoNeon = true, CandyPets = true }
         local function ligar(node)
             for chave, valor in pairs(node) do
@@ -2002,7 +2212,7 @@ aba("Status", function()
         ligar(Cfg.Farm)
         marcarSujo()
         repintarTudo()
-        setStatus("tudo ligado, menos fusao neon, compra com doces, Hauntlet e reentrada")
+        setStatus("tudo ligado, menos o que esta em laranja, fusao neon e compra com doces")
     end)
     criarBotao("SO O BASICO", COR.linha, function()
         local novoCfg = defaults()
@@ -2017,7 +2227,7 @@ aba("Status", function()
                 novoCfg.Farm.Event[chave] = false
             end
         end
-        novoCfg.Notifications = deepCopy(Cfg.Notifications) -- seu webhook fica
+        novoCfg.Notifications = deepCopy(Cfg.Notifications)
         Cfg = novoCfg
         marcarSujo()
         repintarTudo()
@@ -2076,7 +2286,7 @@ aba("Status", function()
     end)
 
     tituloSecao("janela")
-    criarBotao("CENTRALIZAR A JANELA", COR.linha, function()
+    criarBotao("CENTRALIZAR ESTA JANELA", COR.linha, function()
         local tamanho = tamanhoTela()
         local altura = alturaAlvo()
         local x, y = ajustarArrasto(math.floor((tamanho.X - LARG) / 2),
@@ -2129,8 +2339,6 @@ function abrirAba(indice)
     animar(pagina.area, 0.18, { Position = UDim2.new() }, Enum.EasingStyle.Quint)
 end
 
--- Repinta os controles de todas as abas JA construidas. So a aba visivel
--- ganha animacao.
 function repintarTudo()
     for _, pagina in ipairs(paginas) do
         local lista = pagina.atualizar
@@ -2199,7 +2407,6 @@ local function mostrarJanela(mostrar)
             Position = UDim2.fromOffset(posJanela.X + 30, posJanela.Y + 20),
         })
         if t then
-            -- Completed tambem dispara quando o tween e CANCELADO.
             t.Completed:Connect(function(estado)
                 if estado == Enum.PlaybackState.Completed then
                     janela.Visible = false
@@ -2240,8 +2447,6 @@ btnPrincipal.MouseButton1Click:Connect(function()
     end
 end)
 
--- UM laco para o rodape, o ponto de estado e a aba Status. Painel fechado, nao
--- desenha nada; minimizado, cuida so da barra de titulo.
 task.spawn(function()
     local ultimoTexto = nil
     local pontoGrande = false
