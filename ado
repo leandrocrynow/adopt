@@ -1513,8 +1513,8 @@ local function criarCampo(item)
         local texto = string.match(caixa.Text, "^%s*(.-)%s*$") or ""
         if item.lista then
             local lista = {}
-            for parte in string.gmatch(texto, "[^,]+") do
-                parte = string.match(parte, "^%s*(.-)%s*$")
+            for bruto in string.gmatch(texto, "[^,]+") do
+                local parte = string.match(bruto, "^%s*(.-)%s*$")
                 if parte ~= "" and not listaContem(lista, parte) then
                     lista[#lista + 1] = parte
                 end
