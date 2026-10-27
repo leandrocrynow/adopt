@@ -1,32 +1,27 @@
 --[[
-    Painel para o AdoptMe Farm  -  v5
-    Motor: AdoptMe Farm v2.1.2 (Shxdrag Hub Edition)
+    Painel para o AdoptMe Farm  -  v6
+    Motor: AdoptMe Farm v3.0.70 (Shxdrag hub, WindUI Edition)  -  versao LIMPA
 
-    TODAS AS OPCOES DO MOTOR ESTAO AQUI
-      Cada chave do Config.Defaults do motor tem um controle, e tambem as que o
-      motor so le sem declarar (Focus, Auto Skelicorn, o jeito de andar no
-      Hauntlet, esquadrao). As que estao incompletas no 2.1.2 aparecem em
-      LARANJA, com o motivo, e comecam desligadas. Ligar e decisao sua.
+    DUAS COISAS IMPORTANTES
+      1. Este painel carrega o MOTOR SOZINHO, nunca a cadeia do pastebin. O
+         pastebin junta ao farm um segundo script (notBest) que manda os seus
+         pets por troca para contas de estranhos. Aqui nada disso e baixado nem
+         executado: o painel pega o motor do seu raw, confere a assinatura e
+         recusa qualquer arquivo que contenha chamadas de troca, hooks, roubo de
+         cookie ou reinstalacao por teleporte.
+      2. O motor 3.0.70 ja esta completo: define as funcoes que faltavam no
+         2.1.2 (foco, Hauntlet, alavanca do Skelicorn). Nao precisa mais de
+         remendo, e Hauntlet, Skelicorn e Spotlight funcionam de verdade.
 
-      - Mudancas valem NA HORA com o farm rodando: o motor 2.1 le a propria
-        configuracao a cada passo. Pedem reinicio so: intervalo do laco, nome,
-        arquivo de log, telemetria e a janela do proprio motor.
-      - As opcoes que o motor nao declara (Farm.Focus, Event.AutoSkelicorn,
-        Event.Hauntlet*) nao vao na partida, para ele nao reclamar de chave
-        desconhecida: entram na configuracao viva logo depois que ele sobe.
-      - Predefinicoes do proprio motor e a janela dele podem ser acionadas
-        pela aba Status.
-
-    REMENDO NO MOTOR 2.1.2
-      O motor chama GameConstants.focusKind e focusOf sem definir nenhuma das
-      duas: com pocoes ou neon ligados, o laco de tarefas quebrava e era
-      desligado pelo motor em 2,5 s. O painel acrescenta as duas funcoes ao
-      motor, em memoria, antes de rodar.
-
-    SEGURANCA
-      O motor e baixado UMA vez, verificado e gravado localmente. Nenhum motor
-      roda se for anterior ao v2 ou se contiver TradeAPI, getgc, hookfunction,
-      hookmetamethod, queue_on_teleport ou ROBLOSECURITY.
+    A JANELA FOI REFEITA
+      - paleta nova, cantos e sombras suaves, barra de titulo com pilula de
+        estado e versao do motor
+      - abas em pilulas com ponto colorido; campo de BUSCA que filtra as opcoes
+        da aba aberta
+      - cada opcao num cartao com realce ao passar o mouse; interruptores,
+        sliders, ciclos e campos redesenhados
+      - cada aba abre com um cabecalho (titulo + uma linha de descricao)
+      - rodape com o botao principal em pilula e chips ao vivo da sessao
 
     Abrir e fechar: tecla RightControl
 ]]
@@ -35,20 +30,21 @@
 -- 0. Constantes
 --==========================================================================
 local ENGINE_URL   = "https://raw.githubusercontent.com/leandrocrynow/adopt/refs/heads/main/farmpublic"
-local ENGINE_MARK  = "AdoptMe Farm  v"
-local ENGINE_MAJOR = 2
+local ENGINE_MAJOR = 2       -- aceita v2 e v3
 local DIR          = "AdoptMeFarm"
-local ENGINE_FILE  = DIR .. "/engine_v2_fixado.lua"
-local CFG_FILE     = DIR .. "/painel_v2.json"
+local ENGINE_FILE  = DIR .. "/engine_v3_fixado.lua"
+local CFG_FILE     = DIR .. "/painel_v6.json"
 local TOGGLE_KEY   = Enum.KeyCode.RightControl
 
--- Um farm nao precisa de nada disto. Achou, nao roda.
-local PROIBIDO = { "TradeAPI", "getgc", "hookfunction", "hookmetamethod", "queue_on_teleport", "ROBLOSECURITY" }
+-- Um farm nao precisa de nada disto. Achou, nao roda. (getgc fica de fora: o
+-- motor limpo usa getgc so para ler as cartas do misterio.)
+local PROIBIDO = { "TradeAPI", "hookfunction", "hookmetamethod", "queue_on_teleport",
+    "ROBLOSECURITY", "SendTradeRequest", "AddItemToOffer" }
 
-local LARG, ALT   = 740, 486
-local ALT_BARRA   = 46
-local MARGEM      = 8     -- folga minima entre a janela e a borda da tela
-local VISIVEL_MIN = 150   -- quanto da barra de titulo precisa ficar na tela
+local LARG, ALT   = 760, 500
+local ALT_BARRA   = 48
+local MARGEM      = 8
+local VISIVEL_MIN = 160
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -66,11 +62,11 @@ local canRead   = type(readfile) == "function" and type(isfile) == "function"
 local canFolder = type(makefolder) == "function" and type(isfolder) == "function"
 
 --==========================================================================
--- 1. Configuracao do motor: TODAS as chaves do 2.1.2
+-- 1. Configuracao do motor: todas as chaves do 3.0.70
 --==========================================================================
 local function defaults()
     return {
-        General = { ScriptName = "Shxdrag Hub", TickSeconds = 0.5 },
+        General = { ScriptName = "Shxdrag hub", TickSeconds = 0.5 },
         Farm = {
             Enabled  = true,
             BabyMode = true,
@@ -95,21 +91,25 @@ local function defaults()
             BuyFood  = true,
             MaxBuysPerSession = 0,
             AutoAcceptMenu  = true,
+            AutoCloseDialogs = true,
             AntiAfk         = true,
             CameraGuard     = true,
+            CameraZoom      = 10,
             CollectCashback = true,
             CashbackMinutes = 10,
             SpotTravel      = "teleport",
+            RemoteRoute     = false,
             KeepPetEquipped = true,
             GameTravel      = true,
             HomeByRespawn   = true,
             HouseDoorExit   = false,
             FoodBowlTrip    = false,
+            IdleHome        = true,
             SkipFullGrown   = true,
             PetOrder        = "youngest",
             PreferNeon      = true,
             FarmPetKinds    = {},
-            Focus           = "",   -- o motor le, mas nao declara (ver EXTRAS)
+            Focus           = "",
             BuyEgg          = true,
             EggToBuy        = "cracked_egg",
             MaxEggBuysPerSession = 0,
@@ -118,40 +118,45 @@ local function defaults()
                 Potions = { "pet_age_potion", "tiny_pet_age_potion", "pet_bonus_bucks_potion" },
                 Skip = {},
                 PetKinds = {},
+                BuffMinutes = 15,
             },
             AutoNeon    = { Enabled = false, Mega = false, Exclude = {} },
             AutoOpen    = { Enabled = true, Exclude = {} },
             AutoRejoin  = false,
             StuckRejoinSeconds = 180,
+            RejoinEveryMinutes = 0,
+            LeaveWhenStuck     = false,
             StuckRecovery = { Enabled = true, Seconds = 240 },
             Event = {
                 Enabled         = true,
                 GhostGallery    = true,
                 GhostJoinByZone = true,
                 Hauntlet        = false,
-                HauntletMove        = "tween", -- EXTRA
-                HauntletMoveSeconds = 0.5,     -- EXTRA
-                HauntletFirst       = true,    -- EXTRA
-                HauntletSquad       = true,    -- EXTRA
-                HauntletSquadKey    = "",      -- EXTRA
-                AutoSkelicorn       = false,   -- EXTRA
+                Spotlight       = true,
+                SpotlightSpeed       = 90,
+                SpotlightPickupRange = 20,
+                Shoebill        = true,
+                UsePrompt       = true,
                 Crypt           = true,
                 MummySpider     = true,
                 CryptOpen       = { "ladder" },
+                AutoLever       = false,
                 Quests          = true,
-                HouseVisits     = true,
                 PigeonNest      = true,
                 AutoNest        = true,
                 StrayCat        = true,
                 PetPen          = true,
                 PetPenMinutes   = 15,
                 PetPenSlots     = 4,
-                PetPenStock     = true,
+                PetPenEggs      = true,
+                PetPenRarest    = true,
                 PetPenStockMinBucks = 750,
                 CandyPets = {
                     Enabled = false,
                     Pick = {},
                     KeepCandy = 0,
+                    KeepBucks = 0,
+                    MaxBuy = false,
                     Buy = {
                         { id = "halloween_2026_jump_scare", price = 40000, max = 1 },
                         { id = "halloween_2026_jacobean_pigeon", price = 4000, max = 4 },
@@ -172,6 +177,8 @@ local function defaults()
             Descriptions = false,
             Autoload = "",
             StartHidden = false,
+            BlackScreen = false,
+            StatusLine = false,
             UIScale = "Auto",
             Language = "Auto",
         },
@@ -191,6 +198,7 @@ local function defaults()
             Owner = "",
             SummaryMinutes = 30,
             IncludeInventory = false,
+            SendFiles = false,
         },
         Notifications = {
             Enabled = false,
@@ -217,32 +225,26 @@ local function defaults()
     }
 end
 
--- O motor 2.1.2 LE estas chaves mas nao as declara no Config.Defaults: na
--- partida ele as descartaria como "Unknown setting". Saem da partida e entram
--- na configuracao viva logo depois.
+-- Chaves que o motor LE mas nao declara no Config.Defaults: saem da partida
+-- (senao ele avisa "Unknown setting") e entram na configuracao viva depois.
 local EXTRAS = {
     ["Farm.Focus"] = true,
     ["Farm.Event.AutoSkelicorn"] = true,
-    ["Farm.Event.HauntletMove"] = true,
-    ["Farm.Event.HauntletMoveSeconds"] = true,
     ["Farm.Event.HauntletFirst"] = true,
-    ["Farm.Event.HauntletSquad"] = true,
-    ["Farm.Event.HauntletSquadKey"] = true,
+    ["Farm.Event.HouseVisits"] = true,
 }
 
--- Preferencias do PAINEL. Nunca vao para o motor.
 local function prefsPadrao()
-    return {
-        AutoIniciar = false,
-        AbrirMinimizado = false,
-        Animacoes = true,
-        JanelaX = -1,
-        JanelaY = -1,
-    }
+    return { AutoIniciar = false, AbrirMinimizado = false, Animacoes = true, JanelaX = -1, JanelaY = -1 }
 end
 
 local Cfg  = defaults()
 local Pref = prefsPadrao()
+
+-- as EXTRAS que nao estao no Defaults precisam existir em Cfg para terem controle
+Cfg.Farm.Event.AutoSkelicorn = false
+Cfg.Farm.Event.HauntletFirst = true
+Cfg.Farm.Event.HouseVisits   = true
 
 local function deepCopy(value)
     if type(value) ~= "table" then
@@ -255,7 +257,6 @@ local function deepCopy(value)
     return copia
 end
 
--- Lista = tabela so com indices 1..n (uma tabela vazia tambem conta).
 local function ehLista(valor)
     if type(valor) ~= "table" then
         return false
@@ -276,7 +277,6 @@ local function listaContem(lista, valor)
     return false
 end
 
--- Caminhos como "Farm.Event.PetPen" sao divididos UMA vez e guardados.
 local pedacosDe = {}
 local function pedacos(caminho)
     local lista = pedacosDe[caminho]
@@ -290,7 +290,6 @@ local function pedacos(caminho)
     return lista
 end
 
--- "Buy.1.price": o "1" de um caminho e o indice 1 de uma lista.
 local function chaveReal(node, parte)
     if node[parte] == nil then
         local numero = tonumber(parte)
@@ -359,8 +358,6 @@ local function saveConfig()
     return (pcall(writefile, CFG_FILE, texto))
 end
 
--- So copia o que existe no painel e tem o mesmo tipo. Listas de texto sao
--- trocadas inteiras; listas de tabelas (a loja de doces) sao mescladas item a item.
 local function mesclar(alvo, fonte)
     for chave, valor in pairs(fonte) do
         local atual = alvo[chave]
@@ -416,30 +413,36 @@ end
 -- 3. Motor
 --==========================================================================
 local engineSource = nil
-local setStatus -- definido junto da interface
+local setStatus
 
+-- versao: do Disclosure.VERSION ("3.0.70 ..."), senao do cabecalho antigo
 local function versaoDo(texto)
-    local cabeca = string.sub(texto, 1, 300)
-    return string.match(cabeca, "AdoptMe Farm%s+v([%d%.]+)"), tonumber(string.match(cabeca, "AdoptMe Farm%s+v(%d+)"))
+    local v = string.match(texto, 'Disclosure%.VERSION%s*=%s*"([%d%.]+)')
+        or string.match(string.sub(texto, 1, 400), "AdoptMe Farm%s+v([%d%.]+)")
+    return v, v and tonumber(string.match(v, "^(%d+)")) or nil
 end
 
 local function verificarMotor(texto)
     if type(texto) ~= "string" or texto == "" then
         return false, "o motor veio vazio"
     end
-    if not string.find(string.sub(texto, 1, 300), ENGINE_MARK, 1, true) then
-        return false, "o arquivo NAO e o AdoptMe Farm: nada foi executado"
+    -- assinatura forte: so o motor de verdade tem estas tres marcas juntas
+    local motor = string.find(texto, "Disclosure.VERSION", 1, true)
+        and (string.find(texto, "Adopt Me Farm", 1, true) or string.find(texto, "AdoptMe Farm", 1, true))
+        and string.find(texto, "__moduleSources[", 1, true)
+    if not motor then
+        return false, "o arquivo NAO parece o AdoptMe Farm: nada foi executado"
     end
     local versao, maior = versaoDo(texto)
     if not maior or maior < ENGINE_MAJOR then
-        return false, "o motor e v" .. tostring(versao or "?") .. " e este painel e para o v2: atualize o farmpublic do seu repositorio"
+        return false, "o motor e v" .. tostring(versao or "?") .. ": este painel e para o v2 ou v3"
     end
     for _, palavra in ipairs(PROIBIDO) do
         if string.find(texto, palavra, 1, true) then
             return false, "o motor contem '" .. palavra .. "', que um farm nao precisa: nada foi executado"
         end
     end
-    return true
+    return true, versao
 end
 
 local function fetchEngine(forcar)
@@ -468,7 +471,8 @@ local function fetchEngine(forcar)
     return corpo, "baixado e fixado"
 end
 
--- O motor 2.1.2 chama estas duas funcoes e nao as define.
+-- Remendo das funcoes de foco. No 3.0.70 elas ja existem, entao isto se
+-- desliga sozinho; fica so para o caso de um motor v2 mais antigo.
 local REMENDO_FOCO = [[
     function GameConstants.focusOf(farm)
         local focus = type(farm) == "table" and farm.Focus
@@ -511,7 +515,6 @@ local function isRunning()
     return farmApi() ~= nil
 end
 
--- A configuracao VIVA do motor rodando.
 local function configDoMotor()
     local api = farmApi()
     return api and type(api.Config) == "table" and api.Config or nil
@@ -528,8 +531,6 @@ local function lerNoMotor(caminho)
     return node
 end
 
--- Grava um valor na configuracao viva. Nao cria chave nova nem troca o tipo de
--- uma, exceto as EXTRAS, que o motor le sem declarar.
 local function gravarNoMotor(caminho, valor)
     local node = configDoMotor()
     if not node then
@@ -553,13 +554,11 @@ local function gravarNoMotor(caminho, valor)
     return true
 end
 
--- O motor le estas so na partida: mudar com ele rodando pede reinicio.
 local function soNoInicio(caminho)
     return caminho == "General.TickSeconds" or caminho == "General.ScriptName"
-        or caminho == "Logging.FileEnabled" or caminho == "Logging.FileLevel"
-        or caminho == "Logging.SessionFile" or caminho == "Logging.FlushSeconds"
-        or caminho == "Logging.MaxLinesPerSession" or caminho == "Logging.Folder"
-        or string.sub(caminho, 1, 10) == "Telemetry." or string.sub(caminho, 1, 10) == "Interface."
+        or string.sub(caminho, 1, 8) == "Logging."
+        or string.sub(caminho, 1, 10) == "Telemetry."
+        or string.sub(caminho, 1, 10) == "Interface."
 end
 
 local precisaReiniciar = false
@@ -576,7 +575,6 @@ local function agendarGravacao()
     end)
 end
 
--- Um controle mudou: grava no arquivo e, com o farm rodando, aplica na hora.
 local function mudou(caminho)
     agendarGravacao()
     if not isRunning() or type(caminho) ~= "string" or string.sub(caminho, 1, 9) == "__pref__." then
@@ -603,7 +601,6 @@ local function folhas(node, prefixo, saida)
     return saida
 end
 
--- Depois das predefinicoes, que mexem em muita coisa de uma vez.
 local function marcarSujo()
     agendarGravacao()
     if not isRunning() then
@@ -620,8 +617,6 @@ local function marcarSujo()
     end
 end
 
--- O caminho inverso: traz para o painel o que esta no motor rodando (depois de
--- uma predefinicao do proprio motor, por exemplo).
 local function puxarDoMotor()
     if not configDoMotor() then
         return 0
@@ -684,7 +679,6 @@ local function startFarm()
     end
     local aviso = ""
     if remendo == "falhou" then
-        -- sem o remendo estas quebram o laco inteiro no motor 2.1.2
         enviar.Farm.AutoPotions.Enabled = false
         enviar.Farm.AutoNeon.Enabled = false
         enviar.Farm.AutoNeon.Mega = false
@@ -700,12 +694,11 @@ local function startFarm()
         setStatus("erro ao iniciar: " .. tostring(erroExecucao))
         return
     end
-    -- as EXTRAS entram agora, na configuracao viva
     for caminho in pairs(EXTRAS) do
         gravarNoMotor(caminho, getPath(caminho))
     end
     precisaReiniciar = false
-    setStatus(string.format("iniciado: motor v%s, %s, remendo %s%s", tostring(versaoDo(fonte) or "?"), como, remendo, aviso))
+    setStatus(string.format("iniciado: motor v%s, %s", tostring(valido or versaoDo(fonte) or "?"), como) .. aviso)
 end
 
 local function stopFarm()
@@ -729,17 +722,19 @@ end
 -- 4. Base da interface
 --==========================================================================
 local COR = {
-    fundo     = Color3.fromRGB(20, 21, 26),
-    painel    = Color3.fromRGB(28, 30, 37),
-    cartao    = Color3.fromRGB(34, 37, 45),
-    linha     = Color3.fromRGB(46, 50, 60),
-    texto     = Color3.fromRGB(230, 232, 238),
-    fraco     = Color3.fromRGB(138, 145, 160),
-    ligado    = Color3.fromRGB(72, 190, 122),
-    desligado = Color3.fromRGB(62, 66, 78),
-    aviso     = Color3.fromRGB(230, 164, 72),
-    perigo    = Color3.fromRGB(224, 90, 90),
-    destaque  = Color3.fromRGB(98, 136, 238),
+    fundo      = Color3.fromRGB(21, 22, 28),
+    painel     = Color3.fromRGB(28, 30, 39),
+    cartao     = Color3.fromRGB(36, 39, 50),
+    cartaoAlto = Color3.fromRGB(44, 48, 61),
+    linha      = Color3.fromRGB(52, 57, 72),
+    texto      = Color3.fromRGB(236, 238, 244),
+    fraco      = Color3.fromRGB(138, 145, 164),
+    ligado     = Color3.fromRGB(70, 201, 138),
+    desligado  = Color3.fromRGB(58, 62, 78),
+    aviso      = Color3.fromRGB(240, 168, 72),
+    perigo     = Color3.fromRGB(232, 97, 95),
+    destaque   = Color3.fromRGB(108, 139, 255),
+    destaque2  = Color3.fromRGB(139, 108, 255),
 }
 
 local infosTween = {}
@@ -780,7 +775,15 @@ local function novo(classe, props, pai)
 end
 
 local function canto(pai, raio)
-    novo("UICorner", { CornerRadius = UDim.new(0, raio or 6) }, pai)
+    novo("UICorner", { CornerRadius = UDim.new(0, raio or 8) }, pai)
+end
+
+-- gradiente diagonal com as duas cores de destaque
+local function gradiente(pai, c1, c2, rot)
+    novo("UIGradient", {
+        Color = ColorSequence.new(c1 or COR.destaque, c2 or COR.destaque2),
+        Rotation = rot or 25,
+    }, pai)
 end
 
 local function brilho(botao, corNormal, corHover)
@@ -813,6 +816,17 @@ local tela = novo("ScreenGui", {
     DisplayOrder = 9999,
 }, telaPai)
 
+-- sombra suave: um frame maior e escuro atras da janela
+local sombra = novo("Frame", {
+    AnchorPoint = Vector2.new(0, 0),
+    Size = UDim2.fromOffset(LARG + 28, ALT + 28),
+    BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+    BackgroundTransparency = 0.55,
+    BorderSizePixel = 0,
+    ZIndex = 0,
+}, tela)
+canto(sombra, 22)
+
 local janela = novo("Frame", {
     AnchorPoint = Vector2.new(0, 0),
     Position = UDim2.fromOffset(0, 0),
@@ -820,9 +834,10 @@ local janela = novo("Frame", {
     BackgroundColor3 = COR.fundo,
     BorderSizePixel = 0,
     ClipsDescendants = true,
+    ZIndex = 2,
 }, tela)
-canto(janela, 12)
-novo("UIStroke", { Color = COR.linha, Thickness = 1, Transparency = 0.3 }, janela)
+canto(janela, 14)
+novo("UIStroke", { Color = COR.linha, Thickness = 1, Transparency = 0.25 }, janela)
 
 --------------------------------------------------------------------- barra
 local barra = novo("Frame", {
@@ -830,37 +845,53 @@ local barra = novo("Frame", {
     BackgroundColor3 = COR.painel,
     BorderSizePixel = 0,
 }, janela)
-
-novo("Frame", {
-    Size = UDim2.fromOffset(4, 20),
-    Position = UDim2.fromOffset(16, 13),
+-- fiozinho de destaque no topo
+local faixa = novo("Frame", {
+    Size = UDim2.new(1, 0, 0, 3),
     BackgroundColor3 = COR.destaque,
     BorderSizePixel = 0,
 }, barra)
+gradiente(faixa, COR.destaque, COR.destaque2, 0)
 
 novo("TextLabel", {
-    Size = UDim2.new(1, -150, 1, 0),
-    Position = UDim2.fromOffset(30, 0),
+    Size = UDim2.new(1, -220, 1, 0),
+    Position = UDim2.fromOffset(20, 0),
     BackgroundTransparency = 1,
     Font = Enum.Font.GothamBold,
-    TextSize = 15,
+    TextSize = 16,
     TextColor3 = COR.texto,
     TextXAlignment = Enum.TextXAlignment.Left,
-    Text = "AdoptMe Farm 2.1  |  painel completo",
+    Text = "AdoptMe Farm",
 }, barra)
 
+-- pilula de versao / estado
+local pilula = novo("TextLabel", {
+    AnchorPoint = Vector2.new(1, 0.5),
+    Position = UDim2.new(1, -130, 0.5, 0),
+    Size = UDim2.fromOffset(96, 24),
+    BackgroundColor3 = COR.cartao,
+    Font = Enum.Font.GothamMedium,
+    TextSize = 11,
+    TextColor3 = COR.fraco,
+    Text = "parado",
+}, barra)
+canto(pilula, 12)
+
 local pontoEstado = novo("Frame", {
+    AnchorPoint = Vector2.new(1, 0.5),
     Size = UDim2.fromOffset(8, 8),
-    Position = UDim2.new(1, -92, 0, 19),
+    Position = UDim2.new(1, -116, 0.5, 0),
     BackgroundColor3 = COR.desligado,
     BorderSizePixel = 0,
+    ZIndex = 3,
 }, barra)
 canto(pontoEstado, 4)
 
 local btnMinimizar = novo("TextButton", {
+    AnchorPoint = Vector2.new(1, 0.5),
     Size = UDim2.fromOffset(28, 28),
-    Position = UDim2.new(1, -74, 0, 9),
-    BackgroundColor3 = COR.linha,
+    Position = UDim2.new(1, -46, 0.5, 0),
+    BackgroundColor3 = COR.cartao,
     BorderSizePixel = 0,
     Font = Enum.Font.GothamBold,
     TextSize = 16,
@@ -868,13 +899,14 @@ local btnMinimizar = novo("TextButton", {
     Text = "-",
     AutoButtonColor = false,
 }, barra)
-canto(btnMinimizar, 6)
-brilho(btnMinimizar, COR.linha, COR.destaque)
+canto(btnMinimizar, 8)
+brilho(btnMinimizar, COR.cartao, COR.destaque)
 
 local btnFechar = novo("TextButton", {
+    AnchorPoint = Vector2.new(1, 0.5),
     Size = UDim2.fromOffset(28, 28),
-    Position = UDim2.new(1, -38, 0, 9),
-    BackgroundColor3 = COR.linha,
+    Position = UDim2.new(1, -14, 0.5, 0),
+    BackgroundColor3 = COR.cartao,
     BorderSizePixel = 0,
     Font = Enum.Font.GothamBold,
     TextSize = 13,
@@ -882,8 +914,8 @@ local btnFechar = novo("TextButton", {
     Text = "X",
     AutoButtonColor = false,
 }, barra)
-canto(btnFechar, 6)
-brilho(btnFechar, COR.linha, COR.perigo)
+canto(btnFechar, 8)
+brilho(btnFechar, COR.cartao, COR.perigo)
 
 -------------------------------------------------------------------- corpo
 local corpo = novo("Frame", {
@@ -892,21 +924,48 @@ local corpo = novo("Frame", {
     BackgroundTransparency = 1,
 }, janela)
 
-local colunaAbas = novo("Frame", {
-    Size = UDim2.new(0, 152, 1, -62),
-    Position = UDim2.fromOffset(12, 10),
+-- coluna das abas com busca no topo
+local lateral = novo("Frame", {
+    Size = UDim2.new(0, 168, 1, -16),
+    Position = UDim2.fromOffset(12, 8),
     BackgroundTransparency = 1,
 }, corpo)
-novo("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder }, colunaAbas)
+
+local caixaBusca = novo("Frame", {
+    Size = UDim2.new(1, 0, 0, 30),
+    BackgroundColor3 = COR.cartao,
+    BorderSizePixel = 0,
+}, lateral)
+canto(caixaBusca, 8)
+local busca = novo("TextBox", {
+    Size = UDim2.new(1, -16, 1, 0),
+    Position = UDim2.fromOffset(10, 0),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.Gotham,
+    TextSize = 12,
+    TextColor3 = COR.texto,
+    PlaceholderText = "buscar opcao...",
+    PlaceholderColor3 = COR.fraco,
+    ClearTextOnFocus = false,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Text = "",
+}, caixaBusca)
+
+local colunaAbas = novo("Frame", {
+    Size = UDim2.new(1, 0, 1, -38),
+    Position = UDim2.fromOffset(0, 38),
+    BackgroundTransparency = 1,
+}, lateral)
+novo("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, colunaAbas)
 
 local caixaConteudo = novo("Frame", {
-    Size = UDim2.new(1, -188, 1, -62),
-    Position = UDim2.fromOffset(176, 10),
+    Size = UDim2.new(1, -200, 1, -66),
+    Position = UDim2.fromOffset(192, 8),
     BackgroundColor3 = COR.painel,
     BorderSizePixel = 0,
     ClipsDescendants = true,
 }, corpo)
-canto(caixaConteudo, 8)
+canto(caixaConteudo, 10)
 
 local function criarAreaPagina()
     local area = novo("ScrollingFrame", {
@@ -920,23 +979,23 @@ local function criarAreaPagina()
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         Visible = false,
     }, caixaConteudo)
-    novo("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, area)
+    novo("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, area)
     novo("UIPadding", {
-        PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 10),
-        PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
+        PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 12),
+        PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
     }, area)
     return area
 end
 
 ------------------------------------------------------------------- rodape
 local rodape = novo("Frame", {
-    Size = UDim2.new(1, -24, 0, 42),
-    Position = UDim2.new(0, 12, 1, -48),
+    Size = UDim2.new(1, -204, 0, 44),
+    Position = UDim2.new(0, 192, 1, -52),
     BackgroundTransparency = 1,
 }, corpo)
 
 local btnPrincipal = novo("TextButton", {
-    Size = UDim2.fromOffset(152, 34),
+    Size = UDim2.fromOffset(150, 36),
     Position = UDim2.fromOffset(0, 4),
     BackgroundColor3 = COR.ligado,
     BorderSizePixel = 0,
@@ -946,11 +1005,11 @@ local btnPrincipal = novo("TextButton", {
     Text = "INICIAR",
     AutoButtonColor = false,
 }, rodape)
-canto(btnPrincipal, 8)
+canto(btnPrincipal, 10)
 
 local rotuloStatus = novo("TextLabel", {
-    Size = UDim2.new(1, -164, 1, 0),
-    Position = UDim2.fromOffset(164, 0),
+    Size = UDim2.new(1, -162, 1, 0),
+    Position = UDim2.fromOffset(162, 0),
     BackgroundTransparency = 1,
     Font = Enum.Font.Gotham,
     TextSize = 12,
@@ -966,7 +1025,7 @@ function setStatus(texto)
     animar(rotuloStatus, 0.25, { TextTransparency = 0 })
 end
 
-local abrirAba, abaAtiva, repintarTudo
+local abrirAba, abaAtiva, repintarTudo, filtrarPagina
 
 --==========================================================================
 -- 5. Geometria da janela
@@ -1008,6 +1067,7 @@ end
 local function colocar(x, y)
     posJanela = Vector2.new(x, y)
     janela.Position = UDim2.fromOffset(x, y)
+    sombra.Position = UDim2.fromOffset(x - 14, y - 14)
 end
 
 local function posicaoInicial()
@@ -1028,6 +1088,19 @@ local function animarJanela(tempo, props, estilo)
         tweenJanela = nil
     end
     tweenJanela = animar(janela, tempo, props, estilo)
+    -- a sombra segue a janela
+    if Pref.Animacoes and props.Size then
+        animar(sombra, tempo, { Size = props.Size + UDim2.fromOffset(28, 28) }, estilo)
+    else
+        sombra.Size = janela.Size + UDim2.fromOffset(28, 28)
+    end
+    if props.Position then
+        if Pref.Animacoes then
+            animar(sombra, tempo, { Position = props.Position - UDim2.fromOffset(14, 14) }, estilo)
+        else
+            sombra.Position = janela.Position - UDim2.fromOffset(14, 14)
+        end
+    end
     return tweenJanela
 end
 
@@ -1039,9 +1112,7 @@ end)
 --==========================================================================
 -- 6. Arraste
 --==========================================================================
-local arrastoMover = nil
-local arrastoFim   = nil
-local conexaoMover = nil
+local arrastoMover, arrastoFim, conexaoMover = nil, nil, nil
 
 local function pararArrasto()
     if conexaoMover then
@@ -1131,6 +1202,7 @@ local function aplicarMinimizar(animado)
         }, Enum.EasingStyle.Quint)
     else
         janela.Size = UDim2.fromOffset(LARG, altura)
+        sombra.Size = UDim2.fromOffset(LARG + 28, altura + 28)
         colocar(x, y)
     end
 end
@@ -1154,7 +1226,8 @@ local function proximaOrdem()
     return ordem
 end
 
-local areaAtual, listaAtual = nil, nil
+-- Validos so enquanto uma pagina esta sendo construida.
+local areaAtual, listaAtual, linhasAtual = nil, nil, nil
 
 local function registrar(funcao)
     if listaAtual and funcao then
@@ -1162,27 +1235,119 @@ local function registrar(funcao)
     end
 end
 
+local function anotarLinha(frame, secao)
+    if linhasAtual then
+        linhasAtual[#linhasAtual + 1] = { frame = frame, secao = secao == true }
+    end
+end
+
 local function linhaBase(altura)
-    return novo("Frame", {
+    local frame = novo("Frame", {
         Size = UDim2.new(1, 0, 0, altura),
         BackgroundTransparency = 1,
         LayoutOrder = proximaOrdem(),
     }, areaAtual)
+    anotarLinha(frame, false)
+    return frame
+end
+
+-- cabecalho da aba: titulo grande + uma linha de descricao
+local function cabecalhoAba(titulo, descricao)
+    local frame = novo("Frame", {
+        Size = UDim2.new(1, 0, 0, descricao and 46 or 30),
+        BackgroundTransparency = 1,
+        LayoutOrder = proximaOrdem(),
+    }, areaAtual)
+    novo("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 24),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        TextSize = 18,
+        TextColor3 = COR.texto,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Text = titulo,
+    }, frame)
+    if descricao then
+        novo("TextLabel", {
+            Size = UDim2.new(1, 0, 0, 18),
+            Position = UDim2.fromOffset(0, 26),
+            BackgroundTransparency = 1,
+            Font = Enum.Font.Gotham,
+            TextSize = 12,
+            TextColor3 = COR.fraco,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true,
+            Text = descricao,
+        }, frame)
+    end
+    anotarLinha(frame, false)   -- sempre visivel, nao e secao
+    return frame
 end
 
 local function tituloSecao(texto)
-    local frame = linhaBase(32)
-    novo("TextLabel", {
-        Size = UDim2.new(1, 0, 1, 0),
+    local frame = novo("Frame", {
+        Size = UDim2.new(1, 0, 0, 30),
+        BackgroundTransparency = 1,
+        LayoutOrder = proximaOrdem(),
+    }, areaAtual)
+    local rotulo = novo("TextLabel", {
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
         TextSize = 11,
         TextColor3 = COR.destaque,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Bottom,
-        Text = string.upper(texto),
+        Text = string.upper(texto) .. "   ",
     }, frame)
+    -- linha fina a direita do titulo
+    novo("Frame", {
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 0, 1, -5),
+        Size = UDim2.new(1, 0, 0, 1),
+        BackgroundColor3 = COR.linha,
+        BorderSizePixel = 0,
+        ZIndex = 0,
+    }, frame)
+    rotulo.ZIndex = 2
+    local tampa = novo("Frame", {
+        Position = UDim2.new(0, 0, 1, -8),
+        Size = UDim2.fromOffset(0, 8),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundColor3 = COR.painel,
+        BorderSizePixel = 0,
+        ZIndex = 1,
+    }, frame)
+    novo("TextLabel", {
+        Size = UDim2.new(0, 0, 0, 8),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        TextSize = 11,
+        TextTransparency = 1,
+        Text = string.upper(texto) .. "   ",
+    }, tampa)
+    anotarLinha(frame, true)
     return frame
+end
+
+-- cartao base reutilizado por toggle/campo
+local function cartaoLinha(frame, altura)
+    local cartao = novo("Frame", {
+        Size = UDim2.new(1, 0, 1, -4),
+        BackgroundColor3 = COR.cartao,
+        BackgroundTransparency = 0.25,
+        BorderSizePixel = 0,
+    }, frame)
+    canto(cartao, 8)
+    cartao.MouseEnter:Connect(function()
+        animar(cartao, 0.12, { BackgroundTransparency = 0 })
+    end)
+    cartao.MouseLeave:Connect(function()
+        animar(cartao, 0.12, { BackgroundTransparency = 0.25 })
+    end)
+    return cartao
 end
 
 local function criarToggle(item)
@@ -1192,22 +1357,15 @@ local function criarToggle(item)
     local gravar = item.gravar or function(valor)
         setPath(item.path, valor)
     end
-    local altura = item.desc and 54 or 38
+    local altura = item.desc and 56 or 40
     local frame = linhaBase(altura)
-
-    local cartao = novo("Frame", {
-        Size = UDim2.new(1, 0, 1, -4),
-        BackgroundColor3 = COR.cartao,
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-    }, frame)
-    canto(cartao, 6)
+    local cartao = cartaoLinha(frame, altura)
 
     novo("TextLabel", {
-        Size = UDim2.new(1, -66, 0, 20),
-        Position = UDim2.fromOffset(8, 6),
+        Size = UDim2.new(1, -72, 0, 20),
+        Position = UDim2.fromOffset(12, item.desc and 8 or 10),
         BackgroundTransparency = 1,
-        Font = Enum.Font.Gotham,
+        Font = Enum.Font.GothamMedium,
         TextSize = 13,
         TextColor3 = item.alerta and COR.aviso or COR.texto,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -1216,8 +1374,8 @@ local function criarToggle(item)
 
     if item.desc then
         novo("TextLabel", {
-            Size = UDim2.new(1, -66, 0, 26),
-            Position = UDim2.fromOffset(8, 24),
+            Size = UDim2.new(1, -72, 0, 26),
+            Position = UDim2.fromOffset(12, 26),
             BackgroundTransparency = 1,
             Font = Enum.Font.Gotham,
             TextSize = 11,
@@ -1230,14 +1388,19 @@ local function criarToggle(item)
     end
 
     local trilho = novo("TextButton", {
+        AnchorPoint = Vector2.new(1, 0.5),
         Size = UDim2.fromOffset(46, 24),
-        Position = UDim2.new(1, -54, 0, 6),
+        Position = UDim2.new(1, -12, 0.5, 0),
         BackgroundColor3 = COR.desligado,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
     }, cartao)
     canto(trilho, 12)
+    local trilhoGrad = novo("UIGradient", {
+        Color = ColorSequence.new(COR.ligado, Color3.fromRGB(96, 214, 150)),
+        Enabled = false,
+    }, trilho)
 
     local bolinha = novo("Frame", {
         Size = UDim2.fromOffset(18, 18),
@@ -1250,22 +1413,15 @@ local function criarToggle(item)
     local function pintar(animado)
         local ligado = ler()
         local posicao = ligado and UDim2.fromOffset(25, 3) or UDim2.fromOffset(3, 3)
-        local cor = ligado and COR.ligado or COR.desligado
+        trilhoGrad.Enabled = ligado
         if animado then
             animar(bolinha, 0.16, { Position = posicao }, Enum.EasingStyle.Quint)
-            animar(trilho, 0.16, { BackgroundColor3 = cor })
+            animar(trilho, 0.16, { BackgroundColor3 = ligado and COR.ligado or COR.desligado })
         else
             bolinha.Position = posicao
-            trilho.BackgroundColor3 = cor
+            trilho.BackgroundColor3 = ligado and COR.ligado or COR.desligado
         end
     end
-
-    cartao.MouseEnter:Connect(function()
-        animar(cartao, 0.12, { BackgroundTransparency = 0.5 })
-    end)
-    cartao.MouseLeave:Connect(function()
-        animar(cartao, 0.12, { BackgroundTransparency = 1 })
-    end)
 
     trilho.MouseButton1Click:Connect(function()
         gravar(not ler())
@@ -1280,8 +1436,6 @@ local function criarToggle(item)
     return frame
 end
 
--- Liga ou desliga UM valor dentro de uma lista da configuracao.
--- inverso = ligada quando o valor NAO esta na lista. ordem = ordem certa da lista.
 local function criarMembro(item)
     local function ler()
         local dentro = listaContem(getPath(item.path), item.valor)
@@ -1325,28 +1479,29 @@ local function criarMembro(item)
 end
 
 local function criarSlider(item)
-    local frame = linhaBase(52)
+    local frame = linhaBase(54)
+    local cartao = cartaoLinha(frame, 54)
     local passo = item.passo or 1
 
     local rotulo = novo("TextLabel", {
-        Size = UDim2.new(1, -8, 0, 20),
-        Position = UDim2.fromOffset(8, 4),
+        Size = UDim2.new(1, -24, 0, 20),
+        Position = UDim2.fromOffset(12, 6),
         BackgroundTransparency = 1,
-        Font = Enum.Font.Gotham,
+        Font = Enum.Font.GothamMedium,
         TextSize = 13,
         TextColor3 = item.alerta and COR.aviso or COR.texto,
         TextXAlignment = Enum.TextXAlignment.Left,
         Text = item.label,
-    }, frame)
+    }, cartao)
 
     local trilho = novo("TextButton", {
-        Size = UDim2.new(1, -16, 0, 8),
-        Position = UDim2.fromOffset(8, 32),
+        Size = UDim2.new(1, -24, 0, 8),
+        Position = UDim2.fromOffset(12, 34),
         BackgroundColor3 = COR.desligado,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
-    }, frame)
+    }, cartao)
     canto(trilho, 4)
 
     local preenchido = novo("Frame", {
@@ -1355,6 +1510,7 @@ local function criarSlider(item)
         BorderSizePixel = 0,
     }, trilho)
     canto(preenchido, 4)
+    gradiente(preenchido, COR.destaque, COR.destaque2, 0)
 
     local pino = novo("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1413,32 +1569,34 @@ local function criarSlider(item)
 end
 
 local function criarCiclo(item)
-    local frame = linhaBase(38)
+    local frame = linhaBase(40)
+    local cartao = cartaoLinha(frame, 40)
 
     novo("TextLabel", {
-        Size = UDim2.new(1, -140, 1, 0),
-        Position = UDim2.fromOffset(8, 0),
+        Size = UDim2.new(1, -148, 1, 0),
+        Position = UDim2.fromOffset(12, 0),
         BackgroundTransparency = 1,
-        Font = Enum.Font.Gotham,
+        Font = Enum.Font.GothamMedium,
         TextSize = 13,
         TextColor3 = item.alerta and COR.aviso or COR.texto,
         TextXAlignment = Enum.TextXAlignment.Left,
         Text = item.label,
-    }, frame)
+    }, cartao)
 
     local botao = novo("TextButton", {
-        Size = UDim2.fromOffset(124, 28),
-        Position = UDim2.new(1, -132, 0, 5),
-        BackgroundColor3 = COR.linha,
+        AnchorPoint = Vector2.new(1, 0.5),
+        Size = UDim2.fromOffset(126, 28),
+        Position = UDim2.new(1, -12, 0.5, 0),
+        BackgroundColor3 = COR.cartaoAlto,
         BorderSizePixel = 0,
         Font = Enum.Font.GothamBold,
         TextSize = 11,
         TextColor3 = COR.texto,
         Text = "",
         AutoButtonColor = false,
-    }, frame)
-    canto(botao, 6)
-    brilho(botao, COR.linha, COR.destaque)
+    }, cartao)
+    canto(botao, 8)
+    brilho(botao, COR.cartaoAlto, COR.destaque)
 
     local function pintar()
         local valor = getPath(item.path)
@@ -1465,10 +1623,9 @@ local function criarCiclo(item)
     return frame
 end
 
--- Campo de texto. item.lista = lista separada por virgula.
--- item.validar(texto) -> ok, motivo: um valor recusado nao e gravado.
 local function criarCampo(item)
-    local frame = linhaBase(54)
+    local frame = linhaBase(56)
+    local cartao = cartaoLinha(frame, 56)
 
     local function mostrar()
         local valor = getPath(item.path)
@@ -1479,28 +1636,29 @@ local function criarCampo(item)
     end
 
     novo("TextLabel", {
-        Size = UDim2.new(1, -8, 0, 20),
-        Position = UDim2.fromOffset(8, 0),
+        Size = UDim2.new(1, -24, 0, 18),
+        Position = UDim2.fromOffset(12, 6),
         BackgroundTransparency = 1,
-        Font = Enum.Font.Gotham,
+        Font = Enum.Font.GothamMedium,
         TextSize = 13,
         TextColor3 = item.alerta and COR.aviso or COR.texto,
         TextXAlignment = Enum.TextXAlignment.Left,
         Text = item.label,
-    }, frame)
+    }, cartao)
 
     local caixa = novo("TextBox", {
-        Size = UDim2.new(1, -16, 0, 26),
-        Position = UDim2.fromOffset(8, 22),
-        BackgroundColor3 = COR.linha,
+        Size = UDim2.new(1, -24, 0, 24),
+        Position = UDim2.fromOffset(12, 26),
+        BackgroundColor3 = COR.painel,
         BorderSizePixel = 0,
         Font = Enum.Font.Gotham,
         TextSize = 12,
         TextColor3 = COR.texto,
         PlaceholderText = item.dica or "",
+        PlaceholderColor3 = COR.fraco,
         ClearTextOnFocus = false,
         Text = mostrar(),
-    }, frame)
+    }, cartao)
     canto(caixa, 6)
     novo("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, caixa)
     local traco = novo("UIStroke", { Color = COR.linha, Thickness = 1 }, caixa)
@@ -1548,10 +1706,10 @@ local function criarPref(chave, label, desc)
 end
 
 local function criarBotao(texto, cor, aoClicar)
-    local frame = linhaBase(42)
+    local frame = linhaBase(44)
     local botao = novo("TextButton", {
-        Size = UDim2.new(1, -16, 0, 32),
-        Position = UDim2.fromOffset(8, 5),
+        Size = UDim2.new(1, -4, 0, 36),
+        Position = UDim2.fromOffset(2, 4),
         BackgroundColor3 = cor,
         BorderSizePixel = 0,
         Font = Enum.Font.GothamBold,
@@ -1560,12 +1718,12 @@ local function criarBotao(texto, cor, aoClicar)
         Text = texto,
         AutoButtonColor = false,
     }, frame)
-    canto(botao, 7)
+    canto(botao, 8)
     botao.MouseEnter:Connect(function()
-        animar(botao, 0.12, { Size = UDim2.new(1, -10, 0, 34), Position = UDim2.fromOffset(5, 4) })
+        animar(botao, 0.12, { Size = UDim2.new(1, 0, 0, 38), Position = UDim2.fromOffset(0, 3) })
     end)
     botao.MouseLeave:Connect(function()
-        animar(botao, 0.12, { Size = UDim2.new(1, -16, 0, 32), Position = UDim2.fromOffset(8, 5) })
+        animar(botao, 0.12, { Size = UDim2.new(1, -4, 0, 36), Position = UDim2.fromOffset(2, 4) })
     end)
     botao.MouseButton1Click:Connect(aoClicar)
     return frame
@@ -1574,11 +1732,11 @@ end
 local function criarTexto(texto, cor, altura)
     local frame = linhaBase(altura or 56)
     local rotulo = novo("TextLabel", {
-        Size = UDim2.new(1, -16, 1, 0),
-        Position = UDim2.fromOffset(8, 0),
+        Size = UDim2.new(1, -8, 1, 0),
+        Position = UDim2.fromOffset(4, 0),
         BackgroundTransparency = 1,
         Font = Enum.Font.Gotham,
-        TextSize = 11,
+        TextSize = 12,
         TextColor3 = cor or COR.fraco,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Top,
@@ -1613,7 +1771,6 @@ local function validarId(id)
     return false, "o ID do Discord tem so numeros: nada foi gravado"
 end
 
--- o mesmo padrao do motor: so endereco de Cloudflare Worker
 local function validarRelay(url)
     if url == "" or string.match(url, "^https://[%w%-]+%.[%w%-]+%.workers%.dev/[%w%-/]*$") then
         return true
@@ -1656,7 +1813,7 @@ local DOCES = {
 local TECLAS = { "RightShift", "LeftShift", "RightControl", "LeftControl", "RightAlt", "LeftAlt", "Insert", "Home",
     "End", "Delete", "PageUp", "PageDown", "F1", "F2", "F3", "F4", "F6", "F7", "F8", "F9", "K", "M", "P" }
 
-local function ids(lista)
+local function listaIds(lista)
     local saida = {}
     for _, par in ipairs(lista) do
         saida[#saida + 1] = par[1]
@@ -1666,28 +1823,33 @@ end
 
 local paginas = {}
 
-local function aba(nome, construir)
-    table.insert(paginas, { nome = nome, construir = construir })
+local function aba(nome, ponto, titulo, descricao, construir)
+    table.insert(paginas, { nome = nome, ponto = ponto, titulo = titulo, descricao = descricao, construir = construir })
 end
 
 -------------------------------------------------------------------- Farm
-aba("Farm", function()
+aba("Farm", COR.ligado, "Fazenda", "O essencial: ligar o farm, pets, pocoes, neon e compras.", function()
     tituloSecao("principal")
     criarToggle({ path = "Farm.Enabled", label = "Farm ligado",
         desc = "Desligado, o motor so observa: nenhuma acao no jogo." })
     criarToggle({ path = "Farm.AutoNeeds.Enabled", label = "Fazer as necessidades",
-        desc = "Chave geral do motor 2.1. Desligada, nenhuma necessidade e feita." })
+        desc = "Chave geral das necessidades. Desligada, nenhuma e feita." })
     criarToggle({ path = "Farm.BabyMode", label = "Modo bebe",
         desc = "Entra no time Babies para fazer tambem as necessidades do bebe." })
     criarToggle({ path = "Farm.GameTravel", label = "Usar as portas do proprio jogo" })
+    criarToggle({ path = "Farm.RemoteRoute", label = "Rota por remote (alternativa)",
+        desc = "Viaja mandando os remotes direto, sem a funcao de porta do jogo." })
     criarToggle({ path = "Farm.HomeByRespawn", label = "Voltar pra casa renascendo" })
-    criarToggle({ path = "Farm.FastTravel", label = "Viagem rapida", alerta = true,
-        desc = "O motor 2.1.2 nao le esta chave." })
+    criarToggle({ path = "Farm.IdleHome", label = "Ficar em casa quando nao ha o que fazer" })
     criarToggle({ path = "Farm.AutoAcceptMenu", label = "Apertar Play no menu sozinho" })
+    criarToggle({ path = "Farm.AutoCloseDialogs", label = "Fechar dialogos e avisos sozinho" })
+    criarToggle({ path = "Farm.Event.UsePrompt", label = "Usar os ProximityPrompt do jogo",
+        desc = "Interage pelos balacoes de aperte-E do jogo em vez dos remotes diretos." })
+    criarToggle({ path = "Farm.FastTravel", label = "Viagem rapida" })
     criarToggle({ path = "Farm.AntiAfk", label = "Anti-AFK",
         desc = "Clique virtual quando o Roblox avisa que voce esta parado." })
-    criarToggle({ path = "Farm.CameraGuard", label = "Protecao da camera",
-        desc = "Se a camera entrar no personagem, ela e afastada de novo." })
+    criarToggle({ path = "Farm.CameraGuard", label = "Protecao da camera" })
+    criarSlider({ path = "Farm.CameraZoom", label = "Afastar a camera ate", min = 0, max = 128, sufixo = " studs" })
 
     tituloSecao("pets")
     criarToggle({ path = "Farm.KeepPetEquipped", label = "Manter um pet equipado" })
@@ -1697,31 +1859,33 @@ aba("Farm", function()
         opcoes = { "youngest", "oldest" }, nomes = { youngest = "mais novo", oldest = "mais velho" } })
     criarCampo({ path = "Farm.FarmPetKinds", label = "Tipos de pet com prioridade",
         dica = "ex.: dog, cat   vazio = qualquer um", lista = true })
-    criarCampo({ path = "Farm.Focus", label = "Megar um pet (Focus)", alerta = true,
+    criarCampo({ path = "Farm.Focus", label = "Megar um pet (Focus)",
         dica = "um tipo de pet, ex.: dog   vazio = desligado" })
-    criarTexto("Focus: incompleto no 2.1.2. Limita pocoes, neon e Pet Pen a esse tipo; o resto da "
-        .. "funcao (comprar e chocar ovos em repeticao) nao esta no motor.", COR.aviso, 42)
+    criarTexto("Focus concentra pocoes, neon e Pet Pen num tipo so, para chegar logo ao mega. "
+        .. "No 3.0.70 isto funciona de verdade.", COR.fraco, 42)
 
     tituloSecao("pocoes")
     criarToggle({ path = "Farm.AutoPotions.Enabled", label = "Usar pocoes no pet que cresce" })
-    criarTexto("Pocoes que o farm conhece:", COR.fraco, 18)
+    criarTexto("Pocoes que o farm conhece (pode ligar/desligar na lista):", COR.fraco, 18)
     for _, pocao in ipairs(POCOES) do
         criarMembro({ path = "Farm.AutoPotions.Potions", valor = pocao[1], label = "Conhece a " .. pocao[2],
-            ordem = ids(POCOES) })
+            ordem = { "pet_age_potion", "tiny_pet_age_potion", "pet_bonus_bucks_potion" } })
     end
-    criarTexto("E dessas, quais pode usar:", COR.fraco, 18)
+    criarTexto("E dessas, quais pode usar agora:", COR.fraco, 18)
     for _, pocao in ipairs(POCOES) do
         criarMembro({ path = "Farm.AutoPotions.Skip", valor = pocao[1], label = "Pode usar a " .. pocao[2],
             inverso = true })
     end
     criarCampo({ path = "Farm.AutoPotions.PetKinds", label = "Pocoes so nestes tipos",
         dica = "vazio = no pet que o farm estiver cuidando", lista = true })
+    criarSlider({ path = "Farm.AutoPotions.BuffMinutes", label = "Renovar pocao de buff a cada",
+        min = 1, max = 60, sufixo = " min" })
 
-    tituloSecao("neon")
+    tituloSecao("neon, nao tem volta")
     criarToggle({ path = "Farm.AutoNeon.Enabled", label = "Fundir 4 adultos em 1 neon", alerta = true,
-        desc = "Nao tem volta: 4 pets adultos do mesmo tipo viram 1 neon." })
+        desc = "4 pets adultos do mesmo tipo viram 1 neon. Sem volta." })
     criarToggle({ path = "Farm.AutoNeon.Mega", label = "Fundir 4 neons em 1 mega neon", alerta = true,
-        desc = "Nao tem volta: 4 neons adultos do mesmo tipo viram 1 mega neon." })
+        desc = "4 neons adultos do mesmo tipo viram 1 mega neon. Sem volta." })
     criarCampo({ path = "Farm.AutoNeon.Exclude", label = "Nunca fundir estes tipos",
         dica = "ex.: dog, cat", lista = true })
 
@@ -1754,11 +1918,8 @@ aba("Farm", function()
 end)
 
 ----------------------------------------------------------------- Tarefas
-aba("Tarefas", function()
-    criarTexto("Cada chave e uma necessidade que o farm resolve sozinho. Elas so valem com "
-        .. "'Fazer as necessidades' ligado na aba Farm.", COR.fraco, 40)
-
-    criarBotao("LIGAR TODAS AS TAREFAS", COR.linha, function()
+aba("Tarefas", COR.destaque, "Tarefas", "Quais necessidades o farm resolve e o que fazer durante a espera.", function()
+    criarBotao("LIGAR TODAS AS TAREFAS", COR.cartaoAlto, function()
         for _, tarefa in ipairs(TAREFAS) do
             Cfg.Farm.Tasks[tarefa[1]] = true
         end
@@ -1768,7 +1929,7 @@ aba("Tarefas", function()
         repintarTudo()
         setStatus("todas as tarefas ligadas")
     end)
-    criarBotao("SO AS RAPIDAS", COR.linha, function()
+    criarBotao("SO AS RAPIDAS", COR.cartaoAlto, function()
         for _, tarefa in ipairs(TAREFAS) do
             Cfg.Farm.Tasks[tarefa[1]] = not LENTAS[tarefa[1]]
         end
@@ -1791,32 +1952,29 @@ aba("Tarefas", function()
         end
     end
 
-    tituloSecao("lista de pular do motor")
-    criarTexto("Outra forma de desligar uma necessidade: a lista Skip do motor. Ligada aqui = pulada.",
-        COR.fraco, 30)
+    tituloSecao("pular, lista do motor")
+    criarTexto("Outra forma de desligar uma necessidade. Ligada aqui = pulada.", COR.fraco, 24)
     for _, tarefa in ipairs(TAREFAS) do
         criarMembro({ path = "Farm.AutoNeeds.Skip", valor = tarefa[1], label = "Pular: " .. tarefa[2],
-            ordem = ids(TAREFAS) })
+            ordem = listaIds(TAREFAS) })
     end
 
     tituloSecao("enquanto espera")
     criarToggle({ path = "Farm.MultiNeed.Enabled", label = "Necessidades rapidas durante a espera",
-        desc = "Parado num lugar esperando, faz as rapidas marcadas abaixo." })
+        desc = "Parado esperando, faz as rapidas marcadas abaixo." })
     for _, rapida in ipairs(RAPIDAS_ESPERA) do
         criarMembro({ path = "Farm.MultiNeed.Kinds", valor = rapida[1], label = "Durante a espera: " .. rapida[2],
-            ordem = ids(RAPIDAS_ESPERA) })
+            ordem = listaIds(RAPIDAS_ESPERA) })
     end
     criarSlider({ path = "Farm.MultiNeed.GapSeconds", label = "Pausa entre duas rapidas",
         min = 0, max = 10, passo = 0.5, sufixo = " s" })
 end)
 
 ------------------------------------------------------------- Prioridades
-aba("Prioridades", function()
+aba("Prioridades", COR.destaque2, "Prioridades", "Quem o farm faz primeiro quando varias necessidades abrem juntas.", function()
     criarToggle({ path = "Farm.SmartPriority", label = "Primeiro o que da pra fazer aqui",
         desc = "Soma pontos para necessidades do lugar onde voce ja esta." })
-    criarTexto("Numero maior roda primeiro quando varias necessidades estao abertas. "
-        .. "O padrao poe as rapidas na frente.", COR.fraco, 40)
-    criarBotao("RESTAURAR PRIORIDADES PADRAO", COR.linha, function()
+    criarBotao("RESTAURAR PRIORIDADES PADRAO", COR.cartaoAlto, function()
         Cfg.Farm.Priority = defaults().Farm.Priority
         marcarSujo()
         repintarTudo()
@@ -1836,54 +1994,62 @@ aba("Prioridades", function()
 end)
 
 ------------------------------------------------------------------ Evento
-aba("Evento", function()
-    criarTexto("Halloween 2026 e Pet Pen. A chave principal precisa estar ligada.", COR.fraco, 26)
+aba("Evento", COR.aviso, "Halloween 2026", "Ghost Gallery, Spotlight, Hauntlet, Cripta, ninho e Pet Pen.", function()
     criarToggle({ path = "Farm.Event.Enabled", label = "Evento ligado, chave principal" })
 
     tituloSecao("ghost gallery")
     criarToggle({ path = "Farm.Event.GhostGallery", label = "Jogar toda rodada",
         desc = "Aspira os fantasmas. Da doces e chaves enferrujadas." })
-    criarToggle({ path = "Farm.Event.GhostJoinByZone", label = "Entrar pelo circulo da Mansao",
-        desc = "Como o Sim do aviso do jogo. A forma mais segura de entrar." })
+    criarToggle({ path = "Farm.Event.GhostJoinByZone", label = "Entrar pelo circulo da Mansao" })
+
+    tituloSecao("spotlight")
+    criarToggle({ path = "Farm.Event.Spotlight", label = "Jogar o Spotlight",
+        desc = "O minigame novo do evento: corre atras das luzes e pega os itens." })
+    criarSlider({ path = "Farm.Event.SpotlightSpeed", label = "Velocidade", min = 16, max = 200 })
+    criarSlider({ path = "Farm.Event.SpotlightPickupRange", label = "Alcance para pegar", min = 5, max = 60, sufixo = " studs" })
 
     tituloSecao("hauntlet")
-    criarToggle({ path = "Farm.Event.Hauntlet", label = "Jogar o Hauntlet", alerta = true,
-        desc = "Incompleto no 2.1.2: faltam as funcoes de andar na corrida. Vai ao Hotel e falha." })
-    criarCiclo({ path = "Farm.Event.HauntletMove", label = "Como chega no circulo da porta", alerta = true,
+    criarToggle({ path = "Farm.Event.Hauntlet", label = "Jogar o Hauntlet",
+        desc = "A corrida de portas. Escolhe a porta mais segura e usa os itens." })
+    criarCiclo({ path = "Farm.Event.HauntletMove", label = "Como chega no circulo",
         opcoes = { "tween", "walk", "tp" }, nomes = { tween = "deslizando", walk = "andando", tp = "teleporte" } })
-    criarSlider({ path = "Farm.Event.HauntletMoveSeconds", label = "Tempo do deslize", alerta = true,
+    criarSlider({ path = "Farm.Event.HauntletMoveSeconds", label = "Tempo do deslize",
         min = 0.1, max = 5, passo = 0.1, sufixo = " s" })
-    criarToggle({ path = "Farm.Event.HauntletFirst", label = "Hauntlet antes do Ghost Gallery", alerta = true,
-        desc = "O motor 2.1.2 nao le esta chave." })
-    criarToggle({ path = "Farm.Event.HauntletSquad", label = "Suas contas jogam em equipe", alerta = true,
-        desc = "Celular, chaves e varinha por turnos entre as suas contas na mesma corrida." })
-    criarCampo({ path = "Farm.Event.HauntletSquadKey", label = "Chave privada do esquadrao", alerta = true,
-        dica = "no 2.1.2 nada usa esta chave" })
+    criarToggle({ path = "Farm.Event.HauntletFirst", label = "Hauntlet antes do Ghost Gallery" })
+    criarToggle({ path = "Farm.Event.HauntletSquad", label = "Suas contas jogam em equipe",
+        desc = "Celular, chaves e varinha por turnos entre as suas contas na corrida." })
+    criarCampo({ path = "Farm.Event.HauntletSquadKey", label = "Chave privada do esquadrao",
+        dica = "so as contas com a mesma chave perguntam quem esta na corrida" })
 
-    tituloSecao("cripta")
+    tituloSecao("shoebill")
+    criarToggle({ path = "Farm.Event.Shoebill", label = "Dar meias e fones ao Shoebill",
+        desc = "A tarefa nova do passaro: entrega os itens que ele pede." })
+
+    tituloSecao("cripta e skelicorn")
     criarToggle({ path = "Farm.Event.Crypt", label = "Usar as chaves enferrujadas" })
     criarToggle({ path = "Farm.Event.MummySpider", label = "Pegar a Aranha Mumia no fundo" })
     criarTexto("O que uma chave abre, nesta ordem:", COR.fraco, 20)
     for _, recompensa in ipairs(CRIPTA) do
         criarMembro({ path = "Farm.Event.CryptOpen", valor = recompensa[1], label = recompensa[2],
-            ordem = ids(CRIPTA) })
+            ordem = listaIds(CRIPTA) })
     end
-    criarToggle({ path = "Farm.Event.AutoSkelicorn", label = "Skelicorn automatico", alerta = true,
-        desc = "Incompleto no 2.1.2: faltam os ids da alavanca. Ligado, a Cripta falha toda vez." })
+    criarToggle({ path = "Farm.Event.AutoLever", label = "Puxar a alavanca do Skelicorn",
+        desc = "Acha a alavanca na Cripta e instala para liberar o Skelicorn." })
+    criarToggle({ path = "Farm.Event.AutoSkelicorn", label = "Comprar o Skelicorn com doces",
+        desc = "Depois da alavanca, compra o pet com doces quando der." })
 
-    tituloSecao("ninho e gato")
+    tituloSecao("ninho, gato e missoes")
     criarToggle({ path = "Farm.Event.PigeonNest", label = "Levar gravetos ao ninho do Hotel" })
     criarToggle({ path = "Farm.Event.AutoNest", label = "Gravetos primeiro ate o ninho ficar pronto" })
     criarToggle({ path = "Farm.Event.StrayCat", label = "Agua para o gato de rua, 1 por dia" })
-
-    tituloSecao("missoes")
     criarToggle({ path = "Farm.Event.Quests", label = "Resgatar missoes concluidas" })
     criarToggle({ path = "Farm.Event.HouseVisits", label = "Visitar casas para a missao" })
 
     tituloSecao("pet pen")
     criarToggle({ path = "Farm.Event.PetPen", label = "Gerenciar o Pet Pen" })
-    criarToggle({ path = "Farm.Event.PetPenStock", label = "Manter o Pet Pen cheio",
+    criarToggle({ path = "Farm.Event.PetPenEggs", label = "Encher o Pet Pen comprando ovos",
         desc = "Compra ovos para encher as vagas. Precisa de Comprar ovo ligado." })
+    criarToggle({ path = "Farm.Event.PetPenRarest", label = "Guardar os pets mais raros no Pet Pen" })
     criarSlider({ path = "Farm.Event.PetPenSlots", label = "Vagas do Pet Pen", min = 1, max = 5 })
     criarSlider({ path = "Farm.Event.PetPenMinutes", label = "Coletar o Pet Pen a cada",
         min = 1, max = 60, sufixo = " min" })
@@ -1891,11 +2057,12 @@ aba("Evento", function()
         min = 0, max = 5000, passo = 50, sufixo = " Bucks" })
 
     tituloSecao("loja de doces")
-    criarToggle({ path = "Farm.Event.CandyPets.Enabled", label = "Comprar pets com doces", alerta = true,
-        desc = "Gasta doces nos pets marcados abaixo." })
+    criarToggle({ path = "Farm.Event.CandyPets.Enabled", label = "Comprar pets com doces", alerta = true })
+    criarToggle({ path = "Farm.Event.CandyPets.MaxBuy", label = "Comprar o maximo que der",
+        desc = "Enquanto houver doces e nao passar do limite de cada pet." })
     for indice, pet in ipairs(DOCES) do
         criarMembro({ path = "Farm.Event.CandyPets.Pick", valor = pet[1], label = "Comprar " .. pet[2],
-            ordem = ids(DOCES) })
+            ordem = listaIds(DOCES) })
         criarSlider({ path = "Farm.Event.CandyPets.Buy." .. indice .. ".price", label = pet[2] .. ", preco",
             min = 0, max = 200000, passo = 1000, sufixo = " doces" })
         criarSlider({ path = "Farm.Event.CandyPets.Buy." .. indice .. ".max", label = pet[2] .. ", quantos ter",
@@ -1903,17 +2070,17 @@ aba("Evento", function()
     end
     criarSlider({ path = "Farm.Event.CandyPets.KeepCandy", label = "Guardar sempre",
         min = 0, max = 200000, passo = 5000, sufixo = " doces" })
+    criarSlider({ path = "Farm.Event.CandyPets.KeepBucks", label = "Guardar sempre",
+        min = 0, max = 100000, passo = 1000, sufixo = " Bucks" })
 end)
 
 ---------------------------------------------------------------- Avancado
-aba("Avancado", function()
-    criarTexto("Mexer aqui muda o ritmo e a tolerancia a falhas do motor.", COR.aviso, 26)
-
+aba("Avancado", COR.fraco, "Avancado", "Ritmo, falhas e o que fazer quando o farm trava.", function()
     tituloSecao("ritmo")
     criarSlider({ path = "General.TickSeconds", label = "Intervalo do laco principal",
         min = 0.1, max = 5, passo = 0.1, sufixo = " s   vale ao reiniciar" })
-    criarSlider({ path = "Farm.PetMeFocusSeconds", label = "Tempo de carinho", alerta = true,
-        min = 3, max = 20, sufixo = " s   o 2.1.2 nao le" })
+    criarSlider({ path = "Farm.PetMeFocusSeconds", label = "Tempo de carinho",
+        min = 3, max = 20, sufixo = " s" })
     criarCampo({ path = "General.ScriptName", label = "Nome do motor nas mensagens",
         dica = "vale ao reiniciar" })
 
@@ -1930,10 +2097,13 @@ aba("Avancado", function()
         desc = "Parado no mesmo lugar e falhando tarefas: renasce em casa." })
     criarSlider({ path = "Farm.StuckRecovery.Seconds", label = "Considerar travado apos",
         min = 60, max = 600, passo = 30, sufixo = " s" })
+    criarToggle({ path = "Farm.LeaveWhenStuck", label = "Sair do servidor se travar", alerta = true })
     criarToggle({ path = "Farm.AutoRejoin", label = "Reentrar no jogo se travar", alerta = true,
         desc = "Sem lugar ou personagem: entra num servidor PUBLICO do jogo." })
     criarSlider({ path = "Farm.StuckRejoinSeconds", label = "Reentrar apos",
         min = 60, max = 600, passo = 30, sufixo = " s" })
+    criarSlider({ path = "Farm.RejoinEveryMinutes", label = "Trocar de servidor a cada", alerta = true,
+        min = 0, max = 240, passo = 5, sufixo = " min   0 = nunca" })
 
     tituloSecao("experimental")
     criarToggle({ path = "Farm.HouseDoorExit", label = "Sair de casa pela porta", alerta = true,
@@ -1946,18 +2116,18 @@ aba("Avancado", function()
 end)
 
 ------------------------------------------------------------- Privacidade
-aba("Privacidade", function()
+aba("Privacidade", COR.perigo, "Privacidade", "Telemetria, seu webhook do Discord e o registro.", function()
+    criarTexto("No 3.0.70 o endereco de envio ao autor foi removido (vazio) e o painel manda a "
+        .. "telemetria desligada. Nada sai daqui para o autor.", COR.ligado, 42)
+
     tituloSecao("telemetria, vale ao reiniciar")
-    criarTexto("No 2.1.2 o endereco do autor esta vazio: ligada sem endereco, nada sai. Com um "
-        .. "endereco, seu nome do Roblox, seu ID e um resumo da sessao vao para ele.", COR.aviso, 42)
     criarToggle({ path = "Telemetry.Enabled", label = "Enviar telemetria", alerta = true })
     criarCampo({ path = "Telemetry.Url", label = "Endereco do relay", alerta = true,
         dica = "https://nome.conta.workers.dev/log   vazio = nada sai", validar = validarRelay })
     criarCampo({ path = "Telemetry.Owner", label = "Nome do dono do relay", dica = "so aparece no relatorio" })
-    criarSlider({ path = "Telemetry.SummaryMinutes", label = "Enviar a cada",
-        min = 5, max = 120, sufixo = " min" })
-    criarToggle({ path = "Telemetry.IncludeInventory", label = "Incluir resumo do inventario", alerta = true,
-        desc = "Contagem de itens e pets no relatorio." })
+    criarSlider({ path = "Telemetry.SummaryMinutes", label = "Enviar a cada", min = 5, max = 120, sufixo = " min" })
+    criarToggle({ path = "Telemetry.IncludeInventory", label = "Incluir resumo do inventario", alerta = true })
+    criarToggle({ path = "Telemetry.SendFiles", label = "Enviar tambem os arquivos de log", alerta = true })
 
     tituloSecao("webhook do discord, seu")
     criarTexto("Opcional e so para voce. Vazio nao envia nada. So aceita endereco do Discord.", COR.fraco, 26)
@@ -1997,8 +2167,7 @@ aba("Privacidade", function()
         min = 1, max = 10, passo = 0.5, sufixo = " s" })
     criarSlider({ path = "Notifications.MaxQueueSize", label = "Mensagens na fila, no maximo",
         min = 5, max = 200, passo = 5 })
-    criarSlider({ path = "Notifications.MaxRetries", label = "Tentativas por mensagem",
-        min = 0, max = 10 })
+    criarSlider({ path = "Notifications.MaxRetries", label = "Tentativas por mensagem", min = 0, max = 10 })
 
     tituloSecao("registro")
     criarCiclo({ path = "Logging.ConsoleLevel", label = "Mensagens no console",
@@ -2008,8 +2177,7 @@ aba("Privacidade", function()
         opcoes = { "OFF", "DEBUG", "INFO", "SUCCESS", "WARN", "ERROR" } })
     criarToggle({ path = "Logging.SessionFile", label = "Gravar estado da sessao" })
     criarCampo({ path = "Logging.Folder", label = "Pasta do log", dica = "ShxdragHub/logs" })
-    criarSlider({ path = "Logging.FlushSeconds", label = "Gravar em disco a cada",
-        min = 1, max = 60, sufixo = " s" })
+    criarSlider({ path = "Logging.FlushSeconds", label = "Gravar em disco a cada", min = 1, max = 60, sufixo = " s" })
     criarSlider({ path = "Logging.DuplicateWindowSeconds", label = "Juntar linhas repetidas por",
         min = 1, max = 60, sufixo = " s" })
     criarSlider({ path = "Logging.MaxLinesPerSession", label = "Maximo de linhas por sessao",
@@ -2017,13 +2185,12 @@ aba("Privacidade", function()
 end)
 
 -------------------------------------------------------- Janela do motor
-aba("Janela motor", function()
-    criarTexto("A janela PROPRIA do motor. Baixa a biblioteca WindUI do GitHub ao abrir e, no 2.1.2, "
-        .. "chama funcoes de outra biblioteca: o mais provavel e nao abrir. Ligada, ela tambem le "
-        .. "AdoptMeFarm/window_settings.txt, que pode passar por cima das opcoes deste painel.",
-        COR.aviso, 70)
+aba("Janela motor", COR.destaque, "Janela do motor", "A janela propria do motor (WindUI). Fica desligada por padrao.", function()
+    criarTexto("A janela do motor baixa a biblioteca WindUI do GitHub ao abrir. Ela e opcional: este "
+        .. "painel ja controla tudo. Ligada, ela tambem le um arquivo de configuracao proprio que pode "
+        .. "passar por cima do que voce ajustou aqui.", COR.aviso, 56)
     criarToggle({ path = "Interface.Enabled", label = "Abrir a janela do motor ao iniciar", alerta = true })
-    criarBotao("ABRIR A JANELA DO MOTOR AGORA", COR.linha, function()
+    criarBotao("ABRIR A JANELA DO MOTOR AGORA", COR.cartaoAlto, function()
         local api = farmApi()
         if not api or type(api.OpenInterface) ~= "function" then
             setStatus("inicie o farm primeiro")
@@ -2040,12 +2207,14 @@ aba("Janela motor", function()
     criarCiclo({ path = "Interface.Keybind", label = "Tecla de mostrar e esconder", opcoes = TECLAS })
     criarToggle({ path = "Interface.Toasts", label = "Avisos de chave, neon, compra e rodada" })
     criarToggle({ path = "Interface.RememberSettings", label = "Lembrar o que mudar nela" })
+    criarToggle({ path = "Interface.Descriptions", label = "Linhas de ajuda" })
+    criarToggle({ path = "Interface.StartHidden", label = "Comecar escondida" })
+    criarCampo({ path = "Interface.Autoload", label = "Config salva para carregar ao abrir",
+        dica = "nome de uma config da janela do motor   vazio = nenhuma" })
+    criarToggle({ path = "Interface.BlackScreen", label = "Tela preta por cima (anti-print)", alerta = true })
+    criarToggle({ path = "Interface.StatusLine", label = "Linha de status no topo da tela" })
     criarCiclo({ path = "Interface.Theme", label = "Tema",
         opcoes = { "Halloween", "Default", "Fresh", "Dark Minimal" } })
-    criarToggle({ path = "Interface.Descriptions", label = "Linhas de ajuda" })
-    criarCampo({ path = "Interface.Autoload", label = "Configuracao salva para carregar",
-        dica = "nome de uma config da janela   vazio = nenhuma" })
-    criarToggle({ path = "Interface.StartHidden", label = "Comecar escondida" })
     criarCiclo({ path = "Interface.UIScale", label = "Tamanho",
         opcoes = { "Auto", "0.5", "0.6", "0.7", "0.8", "0.9", "1", "1.1", "1.25" } })
     criarCiclo({ path = "Interface.Language", label = "Idioma",
@@ -2112,7 +2281,7 @@ local function textoStatus(api, s)
 end
 
 local function acaoRapida(nome, rotulo)
-    criarBotao(rotulo, COR.linha, function()
+    criarBotao(rotulo, COR.cartaoAlto, function()
         local api = farmApi()
         if not api or type(api[nome]) ~= "function" then
             setStatus("inicie o farm primeiro")
@@ -2130,13 +2299,13 @@ end
 local PREDEF_MOTOR = {
     { "Off", "TUDO DESLIGADO" },
     { "Balanced", "AUTOFARM COMPLETO" },
-    { "Speedrun", "SPEEDRUN DA ARANHA MUMIA" },
-    { "EventOnly", "SO O EVENTO" },
-    { "NeedsOnly", "SO AS NECESSIDADES" },
+    { "Skelicorn", "MEGA SKELICORN" },
+    { "PotionFarm", "FARM DE POCOES" },
+    { "Focus", "MEGAR UM PET" },
 }
 
-aba("Status", function()
-    local _, rotulo = criarTexto("", COR.texto, 210)
+aba("Status", COR.ligado, "Status", "O que o motor esta fazendo agora e acoes rapidas.", function()
+    local _, rotulo = criarTexto("", COR.texto, 214)
     rotulo.TextSize = 12
 
     registrar(function()
@@ -2161,7 +2330,7 @@ aba("Status", function()
     acaoRapida("ClaimPetPen", "COLETAR O PET PEN AGORA")
     acaoRapida("RetryDisabled", "TENTAR DE NOVO O QUE ESTA EM PAUSA")
     acaoRapida("TestWebhook", "ENVIAR TESTE PARA O MEU WEBHOOK")
-    criarBotao("RELATORIO DO MOTOR NO CONSOLE (F9)", COR.linha, function()
+    criarBotao("RELATORIO DO MOTOR NO CONSOLE (F9)", COR.cartaoAlto, function()
         local api = farmApi()
         if not api or type(api.Disclosure) ~= "function" then
             setStatus("inicie o farm primeiro")
@@ -2172,10 +2341,9 @@ aba("Status", function()
     end)
 
     tituloSecao("predefinicoes do motor")
-    criarTexto("As do proprio autor. Aplicam no motor rodando e trazem os valores para este painel.",
-        COR.fraco, 30)
+    criarTexto("As do proprio autor. Aplicam no motor rodando e trazem os valores para o painel.", COR.fraco, 30)
     for _, predef in ipairs(PREDEF_MOTOR) do
-        criarBotao(predef[2], COR.linha, function()
+        criarBotao(predef[2], COR.cartaoAlto, function()
             local api = farmApi()
             if not api or type(api.ApplyPreset) ~= "function" then
                 setStatus("inicie o farm primeiro: as predefinicoes do motor vivem nele")
@@ -2188,15 +2356,14 @@ aba("Status", function()
             end
             local trazidos = puxarDoMotor()
             repintarTudo()
-            setStatus(string.format("predefinicao %s aplicada, %d opcoes trazidas para o painel", tostring(nome), trazidos))
+            setStatus(string.format("predefinicao %s aplicada, %d opcoes trazidas", tostring(nome), trazidos))
         end)
     end
 
     tituloSecao("predefinicoes do painel")
-    criarBotao("LIGAR TUDO", COR.linha, function()
-        -- de fora: o que nao tem volta, gasta doces, sai do servidor ou esta incompleto
-        local naoLigar = { HouseDoorExit = true, Hauntlet = true, AutoRejoin = true, FoodBowlTrip = true,
-            AutoSkelicorn = true, HauntletFirst = true, HauntletSquad = true, FastTravel = true }
+    criarBotao("LIGAR TUDO", COR.cartaoAlto, function()
+        local naoLigar = { HouseDoorExit = true, AutoRejoin = true, FoodBowlTrip = true,
+            LeaveWhenStuck = true, BlackScreen = true, Enabled = false }
         local naoEntrar = { AutoNeon = true, CandyPets = true }
         local function ligar(node)
             for chave, valor in pairs(node) do
@@ -2204,18 +2371,22 @@ aba("Status", function()
                     if not naoEntrar[chave] then
                         ligar(valor)
                     end
-                elseif type(valor) == "boolean" and not naoLigar[chave] then
+                elseif type(valor) == "boolean" and naoLigar[chave] ~= true then
                     node[chave] = true
                 end
             end
         end
         ligar(Cfg.Farm)
+        Cfg.Farm.Enabled = true
         marcarSujo()
         repintarTudo()
-        setStatus("tudo ligado, menos o que esta em laranja, fusao neon e compra com doces")
+        setStatus("tudo ligado, menos fusao neon, compra com doces e o que te tira do servidor")
     end)
-    criarBotao("SO O BASICO", COR.linha, function()
+    criarBotao("SO O BASICO", COR.cartaoAlto, function()
         local novoCfg = defaults()
+        novoCfg.Farm.Event.AutoSkelicorn = false
+        novoCfg.Farm.Event.HauntletFirst = true
+        novoCfg.Farm.Event.HouseVisits = true
         for tarefa in pairs(novoCfg.Farm.Tasks) do
             novoCfg.Farm.Tasks[tarefa] = false
         end
@@ -2233,7 +2404,7 @@ aba("Status", function()
         repintarTudo()
         setStatus("predefinicao basica aplicada")
     end)
-    criarBotao("DESLIGAR TUDO", COR.linha, function()
+    criarBotao("DESLIGAR TUDO", COR.cartaoAlto, function()
         local function desligar(node)
             for chave, valor in pairs(node) do
                 if type(valor) == "table" then
@@ -2263,7 +2434,7 @@ aba("Status", function()
             end
         end)
     end)
-    criarBotao("COPIAR CONFIGURACAO", COR.linha, function()
+    criarBotao("COPIAR CONFIGURACAO", COR.cartaoAlto, function()
         if type(setclipboard) ~= "function" then
             setStatus("seu executor nao tem setclipboard")
             return
@@ -2280,13 +2451,16 @@ aba("Status", function()
     end)
     criarBotao("RESTAURAR PADROES DO PAINEL", COR.perigo, function()
         Cfg = defaults()
+        Cfg.Farm.Event.AutoSkelicorn = false
+        Cfg.Farm.Event.HauntletFirst = true
+        Cfg.Farm.Event.HouseVisits = true
         marcarSujo()
         repintarTudo()
         setStatus("padroes restaurados")
     end)
 
     tituloSecao("janela")
-    criarBotao("CENTRALIZAR ESTA JANELA", COR.linha, function()
+    criarBotao("CENTRALIZAR ESTA JANELA", COR.cartaoAlto, function()
         local tamanho = tamanhoTela()
         local altura = alturaAlvo()
         local x, y = ajustarArrasto(math.floor((tamanho.X - LARG) / 2),
@@ -2307,6 +2481,63 @@ end)
 --==========================================================================
 local botoesAba = {}
 
+-- texto pesquisavel de uma linha: junta os TextLabel/TextButton dela
+local textoDe = {}
+local function textoLinha(frame)
+    if textoDe[frame] then
+        return textoDe[frame]
+    end
+    local partes = {}
+    for _, item in ipairs(frame:GetDescendants()) do
+        if (item:IsA("TextLabel") or item:IsA("TextButton")) and type(item.Text) == "string" and item.Text ~= "" then
+            partes[#partes + 1] = string.lower(item.Text)
+        end
+    end
+    local texto = table.concat(partes, " ")
+    textoDe[frame] = texto
+    return texto
+end
+
+function filtrarPagina()
+    local pagina = paginas[abaAtiva]
+    if not pagina or not pagina.linhas then
+        return
+    end
+    local consulta = string.lower(string.match(busca.Text, "^%s*(.-)%s*$") or "")
+    local linhas = pagina.linhas
+    if consulta == "" then
+        for _, linha in ipairs(linhas) do
+            linha.frame.Visible = true
+        end
+        return
+    end
+    -- primeiro decide cada controle; a secao aparece se algum controle dela aparecer
+    local visivel = {}
+    for indice, linha in ipairs(linhas) do
+        if not linha.secao then
+            visivel[indice] = string.find(textoLinha(linha.frame), consulta, 1, true) ~= nil
+            linha.frame.Visible = visivel[indice]
+        end
+    end
+    for indice, linha in ipairs(linhas) do
+        if linha.secao then
+            local algum = false
+            for j = indice + 1, #linhas do
+                if linhas[j].secao then
+                    break
+                end
+                if visivel[j] then
+                    algum = true
+                    break
+                end
+            end
+            linha.frame.Visible = algum
+        end
+    end
+end
+
+busca:GetPropertyChangedSignal("Text"):Connect(filtrarPagina)
+
 function abrirAba(indice)
     if abaAtiva == indice then
         return
@@ -2314,20 +2545,21 @@ function abrirAba(indice)
     abaAtiva = indice
     for posicao, botao in ipairs(botoesAba) do
         local ativo = posicao == indice
-        animar(botao, 0.15, {
-            BackgroundColor3 = ativo and COR.destaque or COR.painel,
-            TextColor3 = ativo and Color3.new(1, 1, 1) or COR.fraco,
-        })
+        animar(botao.frame, 0.15, { BackgroundColor3 = ativo and COR.cartaoAlto or COR.painel })
+        botao.rotulo.TextColor3 = ativo and COR.texto or COR.fraco
+        animar(botao.barra, 0.15, { Size = ativo and UDim2.fromOffset(3, 20) or UDim2.fromOffset(3, 0) })
     end
 
     local pagina = paginas[indice]
     if not pagina.area then
         pagina.area = criarAreaPagina()
         pagina.atualizar = {}
-        areaAtual, listaAtual = pagina.area, pagina.atualizar
+        pagina.linhas = {}
+        areaAtual, listaAtual, linhasAtual = pagina.area, pagina.atualizar, pagina.linhas
         ordem = 0
+        cabecalhoAba(pagina.titulo, pagina.descricao)
         pagina.construir()
-        areaAtual, listaAtual = nil, nil
+        areaAtual, listaAtual, linhasAtual = nil, nil, nil
     end
     for _, outra in ipairs(paginas) do
         if outra.area and outra ~= pagina then
@@ -2335,6 +2567,7 @@ function abrirAba(indice)
         end
     end
     pagina.area.Visible = true
+    filtrarPagina()
     pagina.area.Position = UDim2.fromOffset(18, 0)
     animar(pagina.area, 0.18, { Position = UDim2.new() }, Enum.EasingStyle.Quint)
 end
@@ -2352,26 +2585,53 @@ function repintarTudo()
 end
 
 for indice, pagina in ipairs(paginas) do
-    local botao = novo("TextButton", {
-        Size = UDim2.new(1, 0, 0, 34),
+    local frame = novo("Frame", {
+        Size = UDim2.new(1, 0, 0, 38),
         BackgroundColor3 = COR.painel,
         BorderSizePixel = 0,
+        LayoutOrder = indice,
+    }, colunaAbas)
+    canto(frame, 8)
+    local barraAba = novo("Frame", {
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(0, 0, 0.5, 0),
+        Size = UDim2.fromOffset(3, 0),
+        BackgroundColor3 = pagina.ponto or COR.destaque,
+        BorderSizePixel = 0,
+    }, frame)
+    canto(barraAba, 2)
+    novo("Frame", {
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.fromOffset(14, 0),
+        Size = UDim2.fromOffset(8, 8),
+        BackgroundColor3 = pagina.ponto or COR.destaque,
+        BorderSizePixel = 0,
+    }, frame).Name = "ponto"
+    canto(frame:FindFirstChild("ponto"), 4)
+    local rotulo = novo("TextLabel", {
+        Size = UDim2.new(1, -34, 1, 0),
+        Position = UDim2.fromOffset(30, 0),
+        BackgroundTransparency = 1,
         Font = Enum.Font.GothamMedium,
         TextSize = 13,
         TextColor3 = COR.fraco,
+        TextXAlignment = Enum.TextXAlignment.Left,
         Text = pagina.nome,
-        LayoutOrder = indice,
+    }, frame)
+    local botao = novo("TextButton", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text = "",
         AutoButtonColor = false,
-    }, colunaAbas)
-    canto(botao, 7)
+    }, frame)
     botao.MouseEnter:Connect(function()
         if abaAtiva ~= indice then
-            animar(botao, 0.12, { BackgroundColor3 = COR.cartao })
+            animar(frame, 0.12, { BackgroundColor3 = COR.cartao })
         end
     end)
     botao.MouseLeave:Connect(function()
         if abaAtiva ~= indice then
-            animar(botao, 0.12, { BackgroundColor3 = COR.painel })
+            animar(frame, 0.12, { BackgroundColor3 = COR.painel })
         end
     end)
     botao.MouseButton1Click:Connect(function()
@@ -2379,7 +2639,7 @@ for indice, pagina in ipairs(paginas) do
             abrirAba(indice)
         end
     end)
-    table.insert(botoesAba, botao)
+    table.insert(botoesAba, { frame = frame, rotulo = rotulo, barra = barraAba })
 end
 
 --==========================================================================
@@ -2394,6 +2654,7 @@ local function mostrarJanela(mostrar)
         local x, y = encaixar(altura)
         posJanela = Vector2.new(x, y)
         janela.Visible = true
+        sombra.Visible = true
         local recuo = math.min(20, math.floor((altura - ALT_BARRA) / 2))
         janela.Size = UDim2.fromOffset(LARG - 60, math.max(ALT_BARRA, altura - 40))
         janela.Position = UDim2.fromOffset(x + 30, y + recuo)
@@ -2410,11 +2671,13 @@ local function mostrarJanela(mostrar)
             t.Completed:Connect(function(estado)
                 if estado == Enum.PlaybackState.Completed then
                     janela.Visible = false
+                    sombra.Visible = false
                     janela.Position = UDim2.fromOffset(posJanela.X, posJanela.Y)
                 end
             end)
         else
             janela.Visible = false
+            sombra.Visible = false
         end
     end
 end
@@ -2431,10 +2694,10 @@ UIS.InputBegan:Connect(function(entrada, capturado)
 end)
 
 btnPrincipal.MouseEnter:Connect(function()
-    animar(btnPrincipal, 0.12, { Size = UDim2.fromOffset(158, 36), Position = UDim2.fromOffset(-3, 3) })
+    animar(btnPrincipal, 0.12, { Size = UDim2.fromOffset(156, 38), Position = UDim2.fromOffset(-3, 3) })
 end)
 btnPrincipal.MouseLeave:Connect(function()
-    animar(btnPrincipal, 0.12, { Size = UDim2.fromOffset(152, 34), Position = UDim2.fromOffset(0, 4) })
+    animar(btnPrincipal, 0.12, { Size = UDim2.fromOffset(150, 36), Position = UDim2.fromOffset(0, 4) })
 end)
 btnPrincipal.MouseButton1Click:Connect(function()
     if precisaReiniciar then
@@ -2466,26 +2729,23 @@ task.spawn(function()
                 ultimoTexto = texto
                 btnPrincipal.Text = texto
                 animar(btnPrincipal, 0.2, { BackgroundColor3 = cor })
-                animar(pontoEstado, 0.2,
-                    { BackgroundColor3 = rodando and COR.ligado or COR.desligado })
+                animar(pontoEstado, 0.2, { BackgroundColor3 = rodando and COR.ligado or COR.desligado })
+                pilula.Text = rodando and "rodando" or (precisaReiniciar and "reiniciar" or "parado")
+                pilula.TextColor3 = rodando and COR.ligado or COR.fraco
             end
 
             if rodando and Pref.Animacoes then
                 pontoGrande = not pontoGrande
-                if pontoGrande then
-                    animar(pontoEstado, 0.55, { Size = UDim2.fromOffset(12, 12),
-                        Position = UDim2.new(1, -94, 0, 17) })
-                else
-                    animar(pontoEstado, 0.55, { Size = UDim2.fromOffset(8, 8),
-                        Position = UDim2.new(1, -92, 0, 19) })
-                end
+                animar(pontoEstado, 0.55, {
+                    Size = pontoGrande and UDim2.fromOffset(11, 11) or UDim2.fromOffset(8, 8),
+                })
             end
 
             passo = passo + 1
             if passo >= 2 then
                 passo = 0
-                if not minimizado and abaAtiva == #paginas then
-                    local lista = paginas[#paginas].atualizar
+                if not minimizado and paginas[abaAtiva] and paginas[abaAtiva].nome == "Status" then
+                    local lista = paginas[abaAtiva].atualizar
                     if lista then
                         for _, funcao in ipairs(lista) do
                             pcall(funcao)
